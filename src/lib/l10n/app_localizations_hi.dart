@@ -2717,6 +2717,34 @@ class AppLocalizationsHi extends AppLocalizations {
       'बीकन नहीं भेजा गया। अपना कॉलसाइन सेट करें और अपना स्थान या संदेश शामिल करें।';
 
   @override
+  String get aprsSoftwareBeaconNoCallsign =>
+      'Beacon not sent. Set your callsign in Settings first.';
+
+  @override
+  String get aprsSoftwareBeaconNoPosition =>
+      'Beacon not sent: no GPS position available. Check your location source, or add a status message to beacon without a position.';
+
+  @override
+  String get aprsSoftwareBeaconNoMessage =>
+      'Beacon not sent. Turn on location, or write a status message to send.';
+
+  @override
+  String get aprsSoftwareBeaconInactive =>
+      'Beacon not sent. The software beacon is turned off.';
+
+  @override
+  String get aprsSoftwareBeaconTransmitDisabled =>
+      'Beacon sent to the Internet only. Transmitting is off — enable \"Allow this application to transmit\" in Settings.';
+
+  @override
+  String get aprsSoftwareBeaconInternetOnly =>
+      'Beacon sent to the Internet only — no preferred radio is selected in the beacon settings.';
+
+  @override
+  String get aprsSoftwareBeaconNoAprsChannel =>
+      'Beacon sent to the Internet only. No connected radio has a channel named \"APRS\" to transmit on.';
+
+  @override
   String get softwareBeaconSmartHint =>
       'जब आप काफी दूरी तय करते हैं या दिशा बदलते हैं, तो अंतराल बीकन के बीच एक अतिरिक्त बीकन भेजता है।';
 

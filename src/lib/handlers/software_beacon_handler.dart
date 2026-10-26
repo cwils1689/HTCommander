@@ -19,6 +19,38 @@ import '../radio/utils.dart';
 import '../services/data_broker_client.dart';
 import 'software_beacon_config.dart';
 
+/// Why a beacon was or was not transmitted. Reported on the
+/// `SoftwareBeaconSent` event (as [BeaconSendResult.name]) so the UI can name
+/// the actual problem instead of guessing at it.
+enum BeaconSendResult {
+  sent,
+
+  /// The software beacon is switched off.
+  inactive,
+
+  /// No callsign is configured, or it is not a valid AX.25 address.
+  noCallsign,
+
+  /// Location beaconing is on but no GPS fix is available, and there is no
+  /// status message to fall back on.
+  noPosition,
+
+  /// Location beaconing is off and no status message was given, so there is
+  /// nothing to say.
+  noMessage,
+
+  /// Gated to APRS-IS, but not transmitted: no preferred radio is selected.
+  internetOnly,
+
+  /// Gated to APRS-IS, but not transmitted: no connected radio has a channel
+  /// named "APRS" to transmit it on.
+  noAprsChannel,
+
+  /// Gated to APRS-IS, but not transmitted: the global `AllowTransmit` safety
+  /// setting is off, so the radio silently refuses every frame.
+  transmitDisabled,
+}
+
 /// A data handler that periodically transmits the app's own APRS beacon.
 ///
 /// Unlike the radio's built-in beacon, the software beacon is fully controlled
@@ -93,14 +125,15 @@ class SoftwareBeaconHandler {
   }
 
   /// Sends a one-time beacon on user request and reports the outcome on the
-  /// `SoftwareBeaconSent` event (data: bool) so the UI can give feedback.
+  /// `SoftwareBeaconSent` event (data: [BeaconSendResult.name]) so the UI can
+  /// say what actually went wrong.
   void _onSendRequested(int deviceId, String name, Object? data) {
     if (_disposed) return;
-    final sent = _sendBeacon();
+    final result = _sendBeacon();
     _broker.dispatch(
       deviceId: 0,
       name: 'SoftwareBeaconSent',
-      data: sent,
+      data: result.name,
       store: false,
     );
   }
@@ -149,21 +182,29 @@ class SoftwareBeaconHandler {
   }
 
   /// Builds and transmits one beacon over the selected radio (if any) and, via
-  /// the `AprsFrame` echo, to APRS-IS. Returns false when nothing was sent.
-  bool _sendBeacon() {
-    if (_disposed || !_config.isActive) return false;
+  /// the `AprsFrame` echo, to APRS-IS. Returns why nothing was sent when the
+  /// result is anything other than [BeaconSendResult.sent].
+  BeaconSendResult _sendBeacon() {
+    if (_disposed || !_config.isActive) return BeaconSendResult.inactive;
 
     final callsign = _broker.getValue<String>(0, 'CallSign', '') ?? '';
-    if (callsign.isEmpty) return false;
+    if (callsign.isEmpty) return BeaconSendResult.noCallsign;
     final stationId = _broker.getValue<int>(0, 'StationId', 0) ?? 0;
     final srcCallsign = stationId > 0 ? '$callsign-$stationId' : callsign;
 
     final destAddr = AX25Address.parse('APRS');
     final srcAddr = AX25Address.parse(srcCallsign);
-    if (destAddr == null || srcAddr == null) return false;
+    if (destAddr == null || srcAddr == null) return BeaconSendResult.noCallsign;
 
     final info = _buildInformationField();
-    if (info == null) return false;
+    if (info == null) {
+      // Nothing to transmit. With location beaconing on that means no GPS fix
+      // was available (and no status message to fall back on); with it off it
+      // means no status message was given.
+      return _config.includeLocation
+          ? BeaconSendResult.noPosition
+          : BeaconSendResult.noMessage;
+    }
 
     final now = DateTime.now();
     final packet = AX25Packet(
@@ -182,10 +223,25 @@ class SoftwareBeaconHandler {
     // Resolve the radio to transmit over: the configured preferred radio when
     // it is connected and has an APRS channel, otherwise the first connected
     // radio that does. When none qualifies the beacon is Internet-only.
+    var transmitted = false;
+    // A radio was wanted but could not be transmitted on, as opposed to the
+    // user deliberately choosing "Internet only".
+    var radioUnavailable = false;
+    // Radio.transmitTncData drops every frame when this is off and reports
+    // nothing back, so check it here rather than claim a transmit that the
+    // radio silently discarded.
+    final allowTransmit =
+        (_broker.getValue<int>(0, 'AllowTransmit', 0) ?? 0) == 1;
+    var transmitBlocked = false;
     final txRadioId = _resolveTxRadio();
-    if (txRadioId > 0) {
+    if (txRadioId <= 0 && _config.radioDeviceId > 0) radioUnavailable = true;
+    if (txRadioId > 0 && !allowTransmit) {
+      transmitBlocked = true;
+    } else if (txRadioId > 0) {
       final channelId = _getAprsChannelId(txRadioId);
-      if (channelId >= 0) {
+      if (channelId < 0) {
+        radioUnavailable = true;
+      } else {
         packet.channelId = channelId;
         _broker.dispatch(
           deviceId: txRadioId,
@@ -197,6 +253,7 @@ class SoftwareBeaconHandler {
           ),
           store: false,
         );
+        transmitted = true;
       }
     }
 
@@ -216,7 +273,14 @@ class SoftwareBeaconHandler {
     // Measure the configured interval from this beacon so an early SmartBeacon
     // push does not cause an extra beacon right after on the periodic tick.
     _restartTimer();
-    return true;
+    if (transmitted) return BeaconSendResult.sent;
+    // The beacon reached APRS-IS but never keyed a radio. Saying "sent" here
+    // hid a disabled transmitter, a missing radio or a missing APRS channel
+    // behind an apparent success.
+    if (transmitBlocked) return BeaconSendResult.transmitDisabled;
+    return radioUnavailable
+        ? BeaconSendResult.noAprsChannel
+        : BeaconSendResult.internetOnly;
   }
 
   /// Remembers the time, position and heading of the beacon just sent so the
@@ -318,12 +382,19 @@ class SoftwareBeaconHandler {
   }
 
   /// Returns the current GPS/manual fix (device 1 `GpsData`) when valid.
+  ///
+  /// Every publisher of that key dispatches a [GpsData] instance, not a JSON
+  /// map, so reading it with `getJsonValue` always came back null and the
+  /// beacon never found a position from any source. Accept both forms, as the
+  /// APRS-IS manager and the map tab already do.
   GpsData? _currentFix() {
-    final gps = _broker.getJsonValue<GpsData>(
-      1,
-      'GpsData',
-      (json) => GpsData.fromJson(json),
-    );
+    final raw = _broker.getValueDynamic(1, 'GpsData', null);
+    GpsData? gps;
+    if (raw is GpsData) {
+      gps = raw;
+    } else if (raw is Map) {
+      gps = GpsData.fromJson(Map<String, dynamic>.from(raw));
+    }
     if (gps == null || !gps.isFixed) return null;
     if (gps.latitude == 0 && gps.longitude == 0) return null;
     return gps;

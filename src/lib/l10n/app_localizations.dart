@@ -4990,6 +4990,48 @@ abstract class AppLocalizations {
   /// **'Beacon not sent. Set your callsign and include your location or a message.'**
   String get aprsSoftwareBeaconNotSent;
 
+  /// No description provided for @aprsSoftwareBeaconNoCallsign.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon not sent. Set your callsign in Settings first.'**
+  String get aprsSoftwareBeaconNoCallsign;
+
+  /// No description provided for @aprsSoftwareBeaconNoPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon not sent: no GPS position available. Check your location source, or add a status message to beacon without a position.'**
+  String get aprsSoftwareBeaconNoPosition;
+
+  /// No description provided for @aprsSoftwareBeaconNoMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon not sent. Turn on location, or write a status message to send.'**
+  String get aprsSoftwareBeaconNoMessage;
+
+  /// No description provided for @aprsSoftwareBeaconInactive.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon not sent. The software beacon is turned off.'**
+  String get aprsSoftwareBeaconInactive;
+
+  /// No description provided for @aprsSoftwareBeaconTransmitDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon sent to the Internet only. Transmitting is off — enable \"Allow this application to transmit\" in Settings.'**
+  String get aprsSoftwareBeaconTransmitDisabled;
+
+  /// No description provided for @aprsSoftwareBeaconInternetOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon sent to the Internet only — no preferred radio is selected in the beacon settings.'**
+  String get aprsSoftwareBeaconInternetOnly;
+
+  /// No description provided for @aprsSoftwareBeaconNoAprsChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon sent to the Internet only. No connected radio has a channel named \"APRS\" to transmit on.'**
+  String get aprsSoftwareBeaconNoAprsChannel;
+
   /// No description provided for @softwareBeaconSmartHint.
   ///
   /// In en, this message translates to:

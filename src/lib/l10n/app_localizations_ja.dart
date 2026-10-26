@@ -2671,6 +2671,34 @@ class AppLocalizationsJa extends AppLocalizations {
       'ビーコンを送信できませんでした。コールサインを設定し、位置情報またはメッセージを含めてください。';
 
   @override
+  String get aprsSoftwareBeaconNoCallsign =>
+      'Beacon not sent. Set your callsign in Settings first.';
+
+  @override
+  String get aprsSoftwareBeaconNoPosition =>
+      'Beacon not sent: no GPS position available. Check your location source, or add a status message to beacon without a position.';
+
+  @override
+  String get aprsSoftwareBeaconNoMessage =>
+      'Beacon not sent. Turn on location, or write a status message to send.';
+
+  @override
+  String get aprsSoftwareBeaconInactive =>
+      'Beacon not sent. The software beacon is turned off.';
+
+  @override
+  String get aprsSoftwareBeaconTransmitDisabled =>
+      'Beacon sent to the Internet only. Transmitting is off — enable \"Allow this application to transmit\" in Settings.';
+
+  @override
+  String get aprsSoftwareBeaconInternetOnly =>
+      'Beacon sent to the Internet only — no preferred radio is selected in the beacon settings.';
+
+  @override
+  String get aprsSoftwareBeaconNoAprsChannel =>
+      'Beacon sent to the Internet only. No connected radio has a channel named \"APRS\" to transmit on.';
+
+  @override
   String get softwareBeaconSmartHint =>
       '一定の距離を移動したり方向を変えたりすると、インターバルビーコンの間に追加のビーコンを送信します。';
 

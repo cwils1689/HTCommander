@@ -17,6 +17,7 @@ import '../dialogs/aprs_location_dialog.dart';
 import '../dialogs/edit_beacon_settings_dialog.dart';
 import '../dialogs/software_beacon_dialog.dart';
 import '../handlers/software_beacon_config.dart';
+import '../handlers/software_beacon_handler.dart';
 import '../dialogs/digipeater_dialog.dart';
 import '../dialogs/add_station_dialog.dart';
 import '../dialogs/callsign_lookup_dialog.dart';
@@ -685,7 +686,9 @@ class _AprsTabState extends State<AprsTab>
   Widget _meshUserAvatar(String peer, {double radius = 20}) {
     final book = _meshBook[peer];
     final key =
-        book?.callsign ?? _meshContactByPrefix(peer)?['key']?.toString() ?? peer;
+        book?.callsign ??
+        _meshContactByPrefix(peer)?['key']?.toString() ??
+        peer;
     return ContactAvatar(
       callsign: key,
       avatarIcon: book?.avatarIcon,
@@ -721,7 +724,8 @@ class _AprsTabState extends State<AprsTab>
     final stations = <StationInfo>[
       if (raw is List)
         for (final item in raw)
-          if (item is Map) StationInfo.fromJson(Map<String, dynamic>.from(item)),
+          if (item is Map)
+            StationInfo.fromJson(Map<String, dynamic>.from(item)),
     ];
     stations.removeWhere(
       (s) =>
@@ -922,7 +926,8 @@ class _AprsTabState extends State<AprsTab>
   /// Full public key for a direct-message peer, when the address book or the
   /// radio knows it.
   String? _meshKeyForPeer(String peer) =>
-      _meshBook[peer]?.callsign ?? _meshContactByPrefix(peer)?['key']?.toString();
+      _meshBook[peer]?.callsign ??
+      _meshContactByPrefix(peer)?['key']?.toString();
 
   /// The callsign the sender's name starts with (e.g. "KK7VZT-Base"). The
   /// name the node advertises is tried before the address-book name.
@@ -980,10 +985,7 @@ class _AprsTabState extends State<AprsTab>
           l10n.meshDetailType,
           group ? l10n.meshGroupMessage : l10n.meshDirectMessage,
         ),
-        AprsDetailItem(
-          l10n.meshDetailConversation,
-          _meshTitle(m.kind, m.peer),
-        ),
+        AprsDetailItem(l10n.meshDetailConversation, _meshTitle(m.kind, m.peer)),
         AprsDetailItem(l10n.meshDetailFrom, from),
         if (callsign != null) ...[
           AprsDetailItem(l10n.cslFieldCallsign, callsign),
@@ -1053,10 +1055,7 @@ class _AprsTabState extends State<AprsTab>
         if (canResend)
           PopupMenuItem(value: 'resend', child: Text(l10n.meshResend)),
         if (_viewAllMesh)
-          PopupMenuItem(
-            value: 'open',
-            child: Text(_meshTitle(m.kind, m.peer)),
-          ),
+          PopupMenuItem(value: 'open', child: Text(_meshTitle(m.kind, m.peer))),
         if (canAddContact)
           PopupMenuItem(value: 'addContact', child: Text(l10n.aprsAddContact)),
         if (_meshCallsignFor(m) != null)
@@ -1496,15 +1495,28 @@ class _AprsTabState extends State<AprsTab>
   void _onSoftwareBeaconSent(int deviceId, String name, Object? data) {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
+    final String message;
+    if (data == true || data == BeaconSendResult.sent.name) {
+      message = l10n.aprsSoftwareBeaconSent;
+    } else if (data == BeaconSendResult.noCallsign.name) {
+      message = l10n.aprsSoftwareBeaconNoCallsign;
+    } else if (data == BeaconSendResult.noPosition.name) {
+      message = l10n.aprsSoftwareBeaconNoPosition;
+    } else if (data == BeaconSendResult.noMessage.name) {
+      message = l10n.aprsSoftwareBeaconNoMessage;
+    } else if (data == BeaconSendResult.transmitDisabled.name) {
+      message = l10n.aprsSoftwareBeaconTransmitDisabled;
+    } else if (data == BeaconSendResult.internetOnly.name) {
+      message = l10n.aprsSoftwareBeaconInternetOnly;
+    } else if (data == BeaconSendResult.noAprsChannel.name) {
+      message = l10n.aprsSoftwareBeaconNoAprsChannel;
+    } else if (data == BeaconSendResult.inactive.name) {
+      message = l10n.aprsSoftwareBeaconInactive;
+    } else {
+      message = l10n.aprsSoftwareBeaconNotSent;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          data == true
-              ? l10n.aprsSoftwareBeaconSent
-              : l10n.aprsSoftwareBeaconNotSent,
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
     );
   }
 
@@ -2988,10 +3000,7 @@ class _AprsTabState extends State<AprsTab>
             padding: menuItemPadding,
             enabled: _meshConnected,
             child: Row(
-              children: [
-                const SizedBox(width: 20),
-                Text(l10n.meshRemoveGroup),
-              ],
+              children: [const SizedBox(width: 20), Text(l10n.meshRemoveGroup)],
             ),
           ),
         const PopupMenuDivider(height: 8),
@@ -3603,7 +3612,8 @@ class _AprsTabState extends State<AprsTab>
         : (c.lastFromMe ? '→ ${c.lastMessage}' : c.lastMessage);
     final avatar = _avatarDataFor(c.callsign);
     return ListTile(
-      selected: !_viewAllMessages && !_inMeshView && _selectedContact == c.callsign,
+      selected:
+          !_viewAllMessages && !_inMeshView && _selectedContact == c.callsign,
       selectedTileColor: scheme.primaryContainer.withValues(alpha: 0.4),
       leading: ContactAvatar(
         callsign: c.callsign,
@@ -4002,8 +4012,7 @@ class _AprsTabState extends State<AprsTab>
                 ),
               const SizedBox(width: 8),
               if (_meshEnabled &&
-                  (_meshConfigured ||
-                      _meshState != MeshCoreState.disconnected))
+                  (_meshConfigured || _meshState != MeshCoreState.disconnected))
                 _buildMeshStatusIcon(),
               // Beacon active indicator - opens beacon settings on tap.
               if (_beaconInterval > 0) _buildBeaconIcon(),
