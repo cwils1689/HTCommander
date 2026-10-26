@@ -24,7 +24,7 @@
     -->
 
     <application
-        android:label="HTCommander"
+        android:label="HTCommander Fork"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:localeConfig="@xml/locales_config">

@@ -5,8 +5,6 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    // Firebase Cloud Messaging (push notifications for APRS cloud messages).
-    id("com.google.gms.google-services")
 }
 
 val keystoreProperties = Properties()
@@ -31,8 +29,10 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.meshcentral.htcommander"
+        // Fork: a distinct application id so this build installs alongside the
+        // upstream app instead of conflicting with its signature. The Kotlin
+        // namespace above is deliberately left alone.
+        applicationId = "com.meshcentral.htcommander.fork"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // Firebase Cloud Messaging (firebase_messaging) requires a minimum of

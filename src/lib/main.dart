@@ -53,10 +53,11 @@ import 'echolink/echolink_manager_stub.dart'
 // glue is never compiled for the browser.
 import 'aprsis/aprsis_manager_stub.dart'
     if (dart.library.io) 'aprsis/aprsis_manager.dart';
-// APRS cloud push (Firebase Cloud Messaging) relies on dart:io + native
-// Firebase; use a no-op stub on web so it is never compiled for the browser.
-import 'services/aprs_cloud_service_stub.dart'
-    if (dart.library.io) 'services/aprs_cloud_service.dart';
+// APRS cloud push (Firebase Cloud Messaging) is disabled in this fork: its
+// push tokens are minted by upstream's Firebase project and delivered by
+// upstream's HTCloudServer, neither of which can reach a fork with its own
+// application id. The no-op stub is therefore used on every platform.
+import 'services/aprs_cloud_service_stub.dart';
 // AllStarLink relies on dart:io UDP sockets + native audio; use a no-op stub on
 // web so the IAX2 internet-radio glue is never compiled for the browser.
 import 'allstar/allstar_manager_stub.dart'
