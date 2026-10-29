@@ -16,8 +16,12 @@ import '../dialogs/dialog_utils.dart';
 import '../dialogs/aprs_location_dialog.dart';
 import '../dialogs/edit_beacon_settings_dialog.dart';
 import '../dialogs/software_beacon_dialog.dart';
+import '../dialogs/aprs_ota_dialog.dart';
+import '../dialogs/aprs_ota_host_dialog.dart';
 import '../handlers/software_beacon_config.dart';
 import '../handlers/software_beacon_handler.dart';
+import '../ota/ota_client.dart';
+import '../ota/ota_host_session.dart';
 import '../dialogs/digipeater_dialog.dart';
 import '../dialogs/add_station_dialog.dart';
 import '../dialogs/callsign_lookup_dialog.dart';
@@ -282,6 +286,11 @@ class _AprsTabState extends State<AprsTab>
     // Re-evaluate the send button enabled state as the user edits the fields.
     _destinationController.addListener(_onInputChanged);
     _messageController.addListener(_onInputChanged);
+
+    // Track the APRS OTA op this station is hosting, if any. Attached here
+    // rather than in the dialog so chasers relayed by the OTA bot are collected
+    // while the host console is closed.
+    OtaHostSession.instance.attach();
 
     // Subscribe to live APRS events.
     _broker.subscribe(
@@ -1861,6 +1870,42 @@ class _AprsTabState extends State<AprsTab>
     }
   }
 
+  /// How far apart two otherwise identical messages that both carry the same
+  /// APRS sequence id may be and still count as one message retransmitted.
+  /// Generous enough to cover any sensible retry schedule, but bounded: the
+  /// outgoing id counter restarts with the app, so the same text with the same
+  /// id days later is a different message, not a repeat.
+  static const Duration _retransmissionWindow = Duration(hours: 1);
+
+  /// The same, for messages carrying no sequence id at all. There is nothing
+  /// but time to go on, so match the short window the beacon branch uses.
+  static const Duration _unidentifiedRetransmissionWindow = Duration(
+    minutes: 5,
+  );
+
+  /// Whether [incoming] is a retransmission of [existing], rather than a new
+  /// message that happens to repeat earlier text.
+  ///
+  /// The caller has already matched sender, addressee, text and origin, so all
+  /// that is left is telling "sent twice" from "said twice". APRS gives
+  /// addressed messages a sequence id for exactly this purpose, so trust it
+  /// when both copies carry one. Previously this comparison did not exist at
+  /// all: any repeat of earlier text was swallowed, however long after.
+  static bool _isSameMessageRetransmission(
+    _AprsEntry incoming,
+    _AprsEntry existing,
+  ) {
+    final gap = incoming.time.difference(existing.time).abs();
+    final incomingId = incoming.messageId;
+    final existingId = existing.messageId;
+    if (incomingId != null && existingId != null) {
+      return incomingId == existingId && gap <= _retransmissionWindow;
+    }
+    // One side numbered and the other not: not the same transmission.
+    if (incomingId != null || existingId != null) return false;
+    return gap <= _unidentifiedRetransmissionWindow;
+  }
+
   /// Ports the C# `AddAprsPacket` display logic.
   void _addAprsPacket(
     AprsPacket aprsPacket,
@@ -2032,6 +2077,9 @@ class _AprsTabState extends State<AprsTab>
           continue;
         }
         // Same origin: collapse retransmissions, keeping the oldest copy.
+        // Only a genuine retransmission of the same message is collapsed;
+        // saying the same thing again later is a new message and must show.
+        if (!_isSameMessageRetransmission(entry, n)) continue;
         if (!n.time.isAfter(entry.time)) return;
         duplicatesToRemove.add(n);
       }
@@ -2311,6 +2359,112 @@ class _AprsTabState extends State<AprsTab>
       ),
       store: false,
     );
+  }
+
+  /// Opens the APRS OTA ops list and, when the user picks a host to chase,
+  /// sends `CHASE <callsign>` to the `OTA` bot and opens that conversation.
+  ///
+  /// The bot needs a position report within five minutes to score the contact,
+  /// so this also asks the software beacon to send one when it is configured
+  /// to include a location.
+  Future<void> _openOtaOps() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final request = await showAprsOtaDialog(context);
+    if (request == null || !mounted) return;
+
+    final l10n = AppLocalizations.of(context);
+    final radioDeviceId = _getPreferredAprsRadioDeviceId();
+    if (radioDeviceId == -1 && !_aprsIsTransmitAvailable) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.aprsNoChannel),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    _broker.dispatch(
+      deviceId: _aprsDeviceId,
+      name: 'SendAprsMessage',
+      data: AprsSendMessageData(
+        destination: OtaClient.botCallsign,
+        message: OtaClient.chaseCommand(request.callsign),
+        radioDeviceId: radioDeviceId,
+        route: _getSelectedRoute(),
+      ),
+      store: false,
+    );
+
+    // The chaser's position is what completes the QSO, so follow the command
+    // with a beacon rather than leaving the user to remember.
+    _broker.dispatch(
+      deviceId: 0,
+      name: 'SendSoftwareBeacon',
+      data: true,
+      store: false,
+    );
+
+    _openConversation(OtaClient.botCallsign);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(l10n.otaChaseSent(request.callsign)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  /// Opens the APRS OTA host console, which runs an op of our own: it sends
+  /// HOST, QSL, STAY, BLAST and DONE to the `OTA` bot as ordinary addressed
+  /// APRS messages and asks the software beacon for the position reports the
+  /// bot requires. The OTA conversation is opened afterwards so the bot's side
+  /// of the exchange reads as the normal thread it is.
+  Future<void> _openOtaHost() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final l10n = AppLocalizations.of(context);
+    OtaHostSession.instance.attach();
+
+    await showAprsOtaHostDialog(
+      context,
+      // The bot declines an op that reaches it over APRS-IS, so hosting needs
+      // a radio that can carry APRS, not just the internet gateway.
+      transmitsOverRf: _getPreferredAprsRadioDeviceId() != -1,
+      onRequestBeacon: () {
+        _broker.dispatch(
+          deviceId: 0,
+          name: 'SendSoftwareBeacon',
+          data: true,
+          store: false,
+        );
+      },
+      onSendCommand: (message) async {
+        final radioDeviceId = _getPreferredAprsRadioDeviceId();
+        if (radioDeviceId == -1) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(l10n.aprsNoChannel),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          return false;
+        }
+        _broker.dispatch(
+          deviceId: _aprsDeviceId,
+          name: 'SendAprsMessage',
+          data: AprsSendMessageData(
+            destination: OtaClient.botCallsign,
+            message: message,
+            radioDeviceId: radioDeviceId,
+            route: _getSelectedRoute(),
+          ),
+          store: false,
+        );
+        return true;
+      },
+    );
+
+    if (!mounted) return;
+    _openConversation(OtaClient.botCallsign);
   }
 
   /// Opens the weather dialog and, on confirmation, sends a weather request to
@@ -2943,6 +3097,33 @@ class _AprsTabState extends State<AprsTab>
             children: [const SizedBox(width: 20), Text(l10n.aprsWeatherReport)],
           ),
         ),
+        PopupMenuItem<String>(
+          value: 'otaOps',
+          height: menuItemHeight,
+          padding: menuItemPadding,
+          enabled:
+              _allowTransmit &&
+              (_hasAprsChannel ||
+                  _aprsIsTransmitAvailable ||
+                  _isAprsSatActive) &&
+              (!_isRadioLockedForOtherUsage || _isAprsSatActive),
+          child: Row(
+            children: [const SizedBox(width: 20), Text(l10n.aprsOtaMenu)],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'otaHost',
+          height: menuItemHeight,
+          padding: menuItemPadding,
+          // Hosting has to go out over RF, so APRS-IS alone is not enough here.
+          enabled:
+              _allowTransmit &&
+              (_hasAprsChannel || _isAprsSatActive) &&
+              (!_isRadioLockedForOtherUsage || _isAprsSatActive),
+          child: Row(
+            children: [const SizedBox(width: 20), Text(l10n.aprsOtaHostMenu)],
+          ),
+        ),
         const PopupMenuDivider(height: 8),
         PopupMenuItem<String>(
           value: 'beaconSettings',
@@ -3040,6 +3221,12 @@ class _AprsTabState extends State<AprsTab>
           break;
         case 'weatherReport':
           _sendWeatherReport();
+          break;
+        case 'otaOps':
+          _openOtaOps();
+          break;
+        case 'otaHost':
+          _openOtaHost();
           break;
         case 'beaconSettings':
           if (context.mounted) showEditBeaconSettingsDialog(context);

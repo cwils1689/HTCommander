@@ -2770,6 +2770,338 @@ class AppLocalizationsFr extends AppLocalizations {
   String get aprsDigipeaterMenu => 'Digipeater...';
 
   @override
+  String get aprsOtaMenu => 'APRS OTA...';
+
+  @override
+  String get otaTitle => 'APRS OTA — on the air now';
+
+  @override
+  String get otaRefresh => 'Refresh';
+
+  @override
+  String get otaChase => 'Chase';
+
+  @override
+  String get otaOpenOpPage => 'Open the op page on aprsota.org';
+
+  @override
+  String otaOnAirCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ops on the air',
+      one: '1 op on the air',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String otaAsOf(String time) {
+    return 'As of $time';
+  }
+
+  @override
+  String otaMinutesLeft(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count min left',
+      one: '1 min left',
+      zero: 'expiring',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String otaQsoCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count QSOs',
+      one: '1 QSO',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get otaNobodyOnAir => 'Nobody is on the air';
+
+  @override
+  String get otaNobodyOnAirHint =>
+      'No APRS OTA ops are running right now. Check back later, or host one yourself by sending HOST to the OTA bot.';
+
+  @override
+  String otaChaseTitle(String callsign) {
+    return 'Chase $callsign?';
+  }
+
+  @override
+  String get otaChaseConfirm => 'Send CHASE';
+
+  @override
+  String otaChaseBody(String callsign) {
+    return 'Sends \"CHASE $callsign\" to the OTA bot as an APRS message. Beacon your position within 5 minutes or the bot will not count the contact.';
+  }
+
+  @override
+  String otaChaseSent(String callsign) {
+    return 'CHASE $callsign sent to OTA.';
+  }
+
+  @override
+  String get otaTokenIntro =>
+      'APRS OTA needs an API token to list the ops on the air. Tokens are minted by hand by aprsota.org — request one, then paste it here.';
+
+  @override
+  String get otaTokenLabel => 'API token';
+
+  @override
+  String get otaGetToken => 'Get a token';
+
+  @override
+  String get otaSaveToken => 'Save';
+
+  @override
+  String get otaChangeToken => 'Change token';
+
+  @override
+  String get otaErrorUnauthorized => 'aprsota.org rejected the API token.';
+
+  @override
+  String get otaErrorRateLimited =>
+      'Too many requests. APRS OTA asks for no more than one refresh a minute.';
+
+  @override
+  String get otaErrorGeneric => 'Could not reach aprsota.org.';
+
+  @override
+  String get aprsOtaHostMenu => 'Host an Op...';
+
+  @override
+  String get otaHostTitle => 'APRS OTA — host an op';
+
+  @override
+  String get otaHostIntro =>
+      'Hosting puts you on the air so chasers can work you. HOST goes to the OTA bot, a position report follows within 5 minutes, and the bot confirms the op. Both have to go out over RF.';
+
+  @override
+  String otaHostStation(String station) {
+    return 'Op station: $station';
+  }
+
+  @override
+  String get otaHostNoCallsign =>
+      'Set your callsign and SSID in Settings before hosting. The op runs from that station and every command has to come from it.';
+
+  @override
+  String get otaHostRfWarning =>
+      'No connected radio has an APRS channel. The OTA bot declines ops that reach it over APRS-IS, so hosting needs a radio.';
+
+  @override
+  String get otaHostBeaconLocationWarning =>
+      'The software beacon is set to status only. Turn its location on: the bot starts an op on a position report, not a status.';
+
+  @override
+  String get otaHostNoFixWarning =>
+      'No GPS fix yet. The bot ignores a beacon with no usable position, so wait for a fix before going on the air.';
+
+  @override
+  String get otaHostBeaconOffWarning =>
+      'The software beacon is off. Hosting needs one beacon to start the op, and one every 15 minutes or so to keep your iGate sending the bot\'s replies to your radio.';
+
+  @override
+  String get otaHostBeaconIntervalWarning =>
+      'Your beacon interval is over 15 minutes. Shorten it while hosting, or your iGate may stop sending the bot\'s replies to your radio.';
+
+  @override
+  String get otaHostDescriptionLabel => 'Description (optional)';
+
+  @override
+  String get otaHostDescriptionHint => 'lakeshore op, HT and a signal stick';
+
+  @override
+  String get otaHostDescriptionHelp =>
+      'Chasers hear this on the air and it stays on every QSL card. Under 55 characters arrives whole.';
+
+  @override
+  String get otaHostGoOnAir => 'Go on the air';
+
+  @override
+  String get otaHostHandbook => 'Handbook';
+
+  @override
+  String get otaHostAwaiting => 'Waiting for the OTA bot';
+
+  @override
+  String otaHostAwaitingBody(String time) {
+    return 'HOST is out and a position report has followed it. The bot confirms the op when it hears the beacon — $time left of the 5 minute window.';
+  }
+
+  @override
+  String get otaHostBeaconAgain => 'Beacon again';
+
+  @override
+  String get otaHostStopWaiting => 'Stop waiting';
+
+  @override
+  String otaHostOnAir(String station) {
+    return '$station is on the air';
+  }
+
+  @override
+  String otaHostMinutesLeft(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count min left',
+      one: '1 min left',
+      zero: 'off the air now',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String otaHostPoints(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count pts',
+      one: '1 pt',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get otaHostAskTimeHint =>
+      'Send TIME or INFO to hear how long the op has left.';
+
+  @override
+  String get otaHostStay => 'STAY';
+
+  @override
+  String otaHostStayAdds(int count) {
+    return 'STAY +$count min';
+  }
+
+  @override
+  String get otaHostTime => 'TIME';
+
+  @override
+  String get otaHostInfo => 'INFO';
+
+  @override
+  String get otaHostChasers => 'CHASERS';
+
+  @override
+  String get otaHostBlast => 'BLAST';
+
+  @override
+  String get otaHostDone => 'End op';
+
+  @override
+  String otaHostCooldown(String label, int seconds) {
+    return '$label in ${seconds}s';
+  }
+
+  @override
+  String otaHostChasersWaiting(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count chasers waiting on your QSL',
+      one: '1 chaser waiting on your QSL',
+      zero: 'No chasers waiting',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String otaHostChasingCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count chasing',
+      one: '1 chasing',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get otaHostNoChasers =>
+      'Nobody is waiting on a QSL. Chasers appear here as the OTA bot relays them, and CHASERS asks the bot for the whole queue.';
+
+  @override
+  String get otaHostQsl => 'QSL';
+
+  @override
+  String otaHostQslTitle(String station) {
+    return 'QSL $station?';
+  }
+
+  @override
+  String otaHostQslBody(String station) {
+    return 'Confirms the contact with $station and logs the QSO. Anything you add is relayed to them with the QSL.';
+  }
+
+  @override
+  String get otaHostQslMessageLabel => 'Message to the chaser (optional)';
+
+  @override
+  String get otaHostQslMessageHint => 'thx for the contact 73';
+
+  @override
+  String get otaHostBlastTitle => 'Blast everyone on the op';
+
+  @override
+  String get otaHostBlastBody =>
+      'Sends one message to every chaser on your op. Each one goes out over the air, so use it for what the whole group needs: 6 per op at most.';
+
+  @override
+  String get otaHostBlastLabel => 'Message';
+
+  @override
+  String get otaHostBlastHint => 'moving to the north summit';
+
+  @override
+  String get otaHostBlastSend => 'Send blast';
+
+  @override
+  String get otaHostDoneTitle => 'End your op?';
+
+  @override
+  String get otaHostDoneBody =>
+      'Sends DONE to the OTA bot and takes you off the air. Anything you write is kept with the log as your sign-off; it is not sent to your chasers.';
+
+  @override
+  String get otaHostSignoffLabel => 'Sign-off (optional)';
+
+  @override
+  String get otaHostSignoffHint => 'gotta go thx all 73';
+
+  @override
+  String get otaHostDoneConfirm => 'Send DONE';
+
+  @override
+  String get otaHostEnded => 'Op complete';
+
+  @override
+  String get otaHostEndedUnknown =>
+      'The op is over. Check aprsota.org for its totals.';
+
+  @override
+  String otaHostEndedUnanswered(String stations) {
+    return 'Still waiting on a QSL when the op ended: $stations';
+  }
+
+  @override
+  String get otaHostAnother => 'Host another op';
+
+  @override
+  String otaHostLastReply(String message) {
+    return 'OTA: $message';
+  }
+
+  @override
   String get digipeaterTitle => 'Digipeater APRS';
 
   @override

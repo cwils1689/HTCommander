@@ -5044,6 +5044,468 @@ abstract class AppLocalizations {
   /// **'Digipeater...'**
   String get aprsDigipeaterMenu;
 
+  /// No description provided for @aprsOtaMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'APRS OTA...'**
+  String get aprsOtaMenu;
+
+  /// No description provided for @otaTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'APRS OTA — on the air now'**
+  String get otaTitle;
+
+  /// No description provided for @otaRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get otaRefresh;
+
+  /// No description provided for @otaChase.
+  ///
+  /// In en, this message translates to:
+  /// **'Chase'**
+  String get otaChase;
+
+  /// No description provided for @otaOpenOpPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the op page on aprsota.org'**
+  String get otaOpenOpPage;
+
+  /// No description provided for @otaOnAirCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 op on the air} other{{count} ops on the air}}'**
+  String otaOnAirCount(int count);
+
+  /// No description provided for @otaAsOf.
+  ///
+  /// In en, this message translates to:
+  /// **'As of {time}'**
+  String otaAsOf(String time);
+
+  /// No description provided for @otaMinutesLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{expiring} =1{1 min left} other{{count} min left}}'**
+  String otaMinutesLeft(int count);
+
+  /// No description provided for @otaQsoCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 QSO} other{{count} QSOs}}'**
+  String otaQsoCount(int count);
+
+  /// No description provided for @otaNobodyOnAir.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody is on the air'**
+  String get otaNobodyOnAir;
+
+  /// No description provided for @otaNobodyOnAirHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No APRS OTA ops are running right now. Check back later, or host one yourself by sending HOST to the OTA bot.'**
+  String get otaNobodyOnAirHint;
+
+  /// No description provided for @otaChaseTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Chase {callsign}?'**
+  String otaChaseTitle(String callsign);
+
+  /// No description provided for @otaChaseConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Send CHASE'**
+  String get otaChaseConfirm;
+
+  /// No description provided for @otaChaseBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Sends \"CHASE {callsign}\" to the OTA bot as an APRS message. Beacon your position within 5 minutes or the bot will not count the contact.'**
+  String otaChaseBody(String callsign);
+
+  /// No description provided for @otaChaseSent.
+  ///
+  /// In en, this message translates to:
+  /// **'CHASE {callsign} sent to OTA.'**
+  String otaChaseSent(String callsign);
+
+  /// No description provided for @otaTokenIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'APRS OTA needs an API token to list the ops on the air. Tokens are minted by hand by aprsota.org — request one, then paste it here.'**
+  String get otaTokenIntro;
+
+  /// No description provided for @otaTokenLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'API token'**
+  String get otaTokenLabel;
+
+  /// No description provided for @otaGetToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a token'**
+  String get otaGetToken;
+
+  /// No description provided for @otaSaveToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get otaSaveToken;
+
+  /// No description provided for @otaChangeToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Change token'**
+  String get otaChangeToken;
+
+  /// No description provided for @otaErrorUnauthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'aprsota.org rejected the API token.'**
+  String get otaErrorUnauthorized;
+
+  /// No description provided for @otaErrorRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many requests. APRS OTA asks for no more than one refresh a minute.'**
+  String get otaErrorRateLimited;
+
+  /// No description provided for @otaErrorGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach aprsota.org.'**
+  String get otaErrorGeneric;
+
+  /// No description provided for @aprsOtaHostMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Host an Op...'**
+  String get aprsOtaHostMenu;
+
+  /// No description provided for @otaHostTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'APRS OTA — host an op'**
+  String get otaHostTitle;
+
+  /// No description provided for @otaHostIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Hosting puts you on the air so chasers can work you. HOST goes to the OTA bot, a position report follows within 5 minutes, and the bot confirms the op. Both have to go out over RF.'**
+  String get otaHostIntro;
+
+  /// No description provided for @otaHostStation.
+  ///
+  /// In en, this message translates to:
+  /// **'Op station: {station}'**
+  String otaHostStation(String station);
+
+  /// No description provided for @otaHostNoCallsign.
+  ///
+  /// In en, this message translates to:
+  /// **'Set your callsign and SSID in Settings before hosting. The op runs from that station and every command has to come from it.'**
+  String get otaHostNoCallsign;
+
+  /// No description provided for @otaHostRfWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'No connected radio has an APRS channel. The OTA bot declines ops that reach it over APRS-IS, so hosting needs a radio.'**
+  String get otaHostRfWarning;
+
+  /// No description provided for @otaHostBeaconLocationWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'The software beacon is set to status only. Turn its location on: the bot starts an op on a position report, not a status.'**
+  String get otaHostBeaconLocationWarning;
+
+  /// No description provided for @otaHostNoFixWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'No GPS fix yet. The bot ignores a beacon with no usable position, so wait for a fix before going on the air.'**
+  String get otaHostNoFixWarning;
+
+  /// No description provided for @otaHostBeaconOffWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'The software beacon is off. Hosting needs one beacon to start the op, and one every 15 minutes or so to keep your iGate sending the bot\'s replies to your radio.'**
+  String get otaHostBeaconOffWarning;
+
+  /// No description provided for @otaHostBeaconIntervalWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Your beacon interval is over 15 minutes. Shorten it while hosting, or your iGate may stop sending the bot\'s replies to your radio.'**
+  String get otaHostBeaconIntervalWarning;
+
+  /// No description provided for @otaHostDescriptionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Description (optional)'**
+  String get otaHostDescriptionLabel;
+
+  /// No description provided for @otaHostDescriptionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'lakeshore op, HT and a signal stick'**
+  String get otaHostDescriptionHint;
+
+  /// No description provided for @otaHostDescriptionHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Chasers hear this on the air and it stays on every QSL card. Under 55 characters arrives whole.'**
+  String get otaHostDescriptionHelp;
+
+  /// No description provided for @otaHostGoOnAir.
+  ///
+  /// In en, this message translates to:
+  /// **'Go on the air'**
+  String get otaHostGoOnAir;
+
+  /// No description provided for @otaHostHandbook.
+  ///
+  /// In en, this message translates to:
+  /// **'Handbook'**
+  String get otaHostHandbook;
+
+  /// No description provided for @otaHostAwaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the OTA bot'**
+  String get otaHostAwaiting;
+
+  /// No description provided for @otaHostAwaitingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'HOST is out and a position report has followed it. The bot confirms the op when it hears the beacon — {time} left of the 5 minute window.'**
+  String otaHostAwaitingBody(String time);
+
+  /// No description provided for @otaHostBeaconAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon again'**
+  String get otaHostBeaconAgain;
+
+  /// No description provided for @otaHostStopWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop waiting'**
+  String get otaHostStopWaiting;
+
+  /// No description provided for @otaHostOnAir.
+  ///
+  /// In en, this message translates to:
+  /// **'{station} is on the air'**
+  String otaHostOnAir(String station);
+
+  /// No description provided for @otaHostMinutesLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{off the air now} =1{1 min left} other{{count} min left}}'**
+  String otaHostMinutesLeft(int count);
+
+  /// No description provided for @otaHostPoints.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 pt} other{{count} pts}}'**
+  String otaHostPoints(int count);
+
+  /// No description provided for @otaHostAskTimeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Send TIME or INFO to hear how long the op has left.'**
+  String get otaHostAskTimeHint;
+
+  /// No description provided for @otaHostStay.
+  ///
+  /// In en, this message translates to:
+  /// **'STAY'**
+  String get otaHostStay;
+
+  /// No description provided for @otaHostStayAdds.
+  ///
+  /// In en, this message translates to:
+  /// **'STAY +{count} min'**
+  String otaHostStayAdds(int count);
+
+  /// No description provided for @otaHostTime.
+  ///
+  /// In en, this message translates to:
+  /// **'TIME'**
+  String get otaHostTime;
+
+  /// No description provided for @otaHostInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'INFO'**
+  String get otaHostInfo;
+
+  /// No description provided for @otaHostChasers.
+  ///
+  /// In en, this message translates to:
+  /// **'CHASERS'**
+  String get otaHostChasers;
+
+  /// No description provided for @otaHostBlast.
+  ///
+  /// In en, this message translates to:
+  /// **'BLAST'**
+  String get otaHostBlast;
+
+  /// No description provided for @otaHostDone.
+  ///
+  /// In en, this message translates to:
+  /// **'End op'**
+  String get otaHostDone;
+
+  /// No description provided for @otaHostCooldown.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} in {seconds}s'**
+  String otaHostCooldown(String label, int seconds);
+
+  /// No description provided for @otaHostChasersWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No chasers waiting} =1{1 chaser waiting on your QSL} other{{count} chasers waiting on your QSL}}'**
+  String otaHostChasersWaiting(int count);
+
+  /// No description provided for @otaHostChasingCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 chasing} other{{count} chasing}}'**
+  String otaHostChasingCount(int count);
+
+  /// No description provided for @otaHostNoChasers.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody is waiting on a QSL. Chasers appear here as the OTA bot relays them, and CHASERS asks the bot for the whole queue.'**
+  String get otaHostNoChasers;
+
+  /// No description provided for @otaHostQsl.
+  ///
+  /// In en, this message translates to:
+  /// **'QSL'**
+  String get otaHostQsl;
+
+  /// No description provided for @otaHostQslTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'QSL {station}?'**
+  String otaHostQslTitle(String station);
+
+  /// No description provided for @otaHostQslBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirms the contact with {station} and logs the QSO. Anything you add is relayed to them with the QSL.'**
+  String otaHostQslBody(String station);
+
+  /// No description provided for @otaHostQslMessageLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Message to the chaser (optional)'**
+  String get otaHostQslMessageLabel;
+
+  /// No description provided for @otaHostQslMessageHint.
+  ///
+  /// In en, this message translates to:
+  /// **'thx for the contact 73'**
+  String get otaHostQslMessageHint;
+
+  /// No description provided for @otaHostBlastTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Blast everyone on the op'**
+  String get otaHostBlastTitle;
+
+  /// No description provided for @otaHostBlastBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Sends one message to every chaser on your op. Each one goes out over the air, so use it for what the whole group needs: 6 per op at most.'**
+  String get otaHostBlastBody;
+
+  /// No description provided for @otaHostBlastLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get otaHostBlastLabel;
+
+  /// No description provided for @otaHostBlastHint.
+  ///
+  /// In en, this message translates to:
+  /// **'moving to the north summit'**
+  String get otaHostBlastHint;
+
+  /// No description provided for @otaHostBlastSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send blast'**
+  String get otaHostBlastSend;
+
+  /// No description provided for @otaHostDoneTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'End your op?'**
+  String get otaHostDoneTitle;
+
+  /// No description provided for @otaHostDoneBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Sends DONE to the OTA bot and takes you off the air. Anything you write is kept with the log as your sign-off; it is not sent to your chasers.'**
+  String get otaHostDoneBody;
+
+  /// No description provided for @otaHostSignoffLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-off (optional)'**
+  String get otaHostSignoffLabel;
+
+  /// No description provided for @otaHostSignoffHint.
+  ///
+  /// In en, this message translates to:
+  /// **'gotta go thx all 73'**
+  String get otaHostSignoffHint;
+
+  /// No description provided for @otaHostDoneConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Send DONE'**
+  String get otaHostDoneConfirm;
+
+  /// No description provided for @otaHostEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'Op complete'**
+  String get otaHostEnded;
+
+  /// No description provided for @otaHostEndedUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'The op is over. Check aprsota.org for its totals.'**
+  String get otaHostEndedUnknown;
+
+  /// No description provided for @otaHostEndedUnanswered.
+  ///
+  /// In en, this message translates to:
+  /// **'Still waiting on a QSL when the op ended: {stations}'**
+  String otaHostEndedUnanswered(String stations);
+
+  /// No description provided for @otaHostAnother.
+  ///
+  /// In en, this message translates to:
+  /// **'Host another op'**
+  String get otaHostAnother;
+
+  /// No description provided for @otaHostLastReply.
+  ///
+  /// In en, this message translates to:
+  /// **'OTA: {message}'**
+  String otaHostLastReply(String message);
+
   /// No description provided for @digipeaterTitle.
   ///
   /// In en, this message translates to:
