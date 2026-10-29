@@ -17,7 +17,6 @@ import '../dialogs/aprs_location_dialog.dart';
 import '../dialogs/edit_beacon_settings_dialog.dart';
 import '../dialogs/software_beacon_dialog.dart';
 import '../dialogs/aprs_ota_dialog.dart';
-import '../dialogs/aprs_ota_host_dialog.dart';
 import '../handlers/software_beacon_config.dart';
 import '../handlers/software_beacon_handler.dart';
 import '../ota/ota_client.dart';
@@ -77,7 +76,11 @@ class _AprsEntry {
   final bool sender;
   final String? messageId;
   final PacketDataType messageType;
-  int imageIndex; // -1 none, 0 ack, 1 rej, 3 position
+  int imageIndex; // -1 none, 0 ack, 1 rej, 3 position, 4 gave up (TX OUT)
+  /// Transmissions this message still has left before it is given up on, or
+  /// null when it is not waiting on an ack. Mirrors the countdown a Yaesu
+  /// handheld shows next to a message it is still trying to deliver.
+  int? attemptsLeft;
   final AuthState authState;
   double? latitude;
   double? longitude;
@@ -320,6 +323,20 @@ class _AprsTabState extends State<AprsTab>
       deviceId: _aprsDeviceId,
       name: clearAprsConversationEvent,
       callback: _onClearAprsConversation,
+    );
+
+    // Where sent messages stand: the retry queue reports an ack, a rejection,
+    // the attempts left, or that it gave up.
+    _broker.subscribe(
+      deviceId: _aprsDeviceId,
+      name: 'AprsMessageDelivery',
+      callback: _onAprsMessageDelivery,
+    );
+    _broker.dispatch(
+      deviceId: _aprsDeviceId,
+      name: 'RequestAprsDeliveryStates',
+      data: null,
+      store: false,
     );
 
     // Persisted internet (APRS-IS) history, served by the APRS-IS manager.
@@ -1757,6 +1774,8 @@ class _AprsTabState extends State<AprsTab>
     if (e.sender) {
       if (e.imageIndex == 0) return Icons.check;
       if (e.imageIndex == 1) return Icons.close;
+      // Every transmission went unanswered: the radio's "TX OUT".
+      if (e.imageIndex == 4) return Icons.error_outline;
       return Icons.schedule;
     }
     if (e.imageIndex == 3) return Icons.location_on;
@@ -1778,6 +1797,14 @@ class _AprsTabState extends State<AprsTab>
       latitude: e.latitude,
       longitude: e.longitude,
       icon: _iconFor(e),
+      iconColor: e.sender && e.imageIndex == 4
+          ? Theme.of(context).colorScheme.error
+          : null,
+      // The attempts left, as the radio counts them down beside a message it
+      // is still trying to deliver.
+      iconBadge: (e.sender && e.imageIndex == -1 && (e.attemptsLeft ?? 0) > 0)
+          ? '${e.attemptsLeft}'
+          : null,
       bubbleSymbol: _bubbleSymbolFor(e),
       // Tint packets gated in from the APRS-IS internet service so they stand
       // apart from RF traffic; RF messages keep the default bubble colour.
@@ -2163,6 +2190,63 @@ class _AprsTabState extends State<AprsTab>
     return true;
   }
 
+  /// Applies a delivery update from the retry queue to the message it names.
+  ///
+  /// The queue is the authority here: it runs whether or not this tab is on
+  /// screen, and it knows how many transmissions are left. [_updateDeliveryIcon]
+  /// stays for the ack that arrives while the tab is watching.
+  void _onAprsMessageDelivery(int deviceId, String name, Object? data) {
+    if (!mounted || data is! Map) return;
+    final msgId = data['msgId'];
+    if (msgId is! int) return;
+    final id = '$msgId';
+    final state = '${data['state']}';
+    final destination = '${data['destination'] ?? ''}'.trim().toUpperCase();
+    final attemptsLeft = data['attemptsLeft'];
+
+    var changed = false;
+    for (final e in _entries) {
+      if (!e.sender || e.messageId != id) continue;
+      if (destination.isNotEmpty &&
+          e.aprsPacket.messageData.addressee.trim().toUpperCase() !=
+              destination) {
+        continue;
+      }
+      switch (state) {
+        case 'pending':
+          e.attemptsLeft = attemptsLeft is int ? attemptsLeft : null;
+        case 'acked':
+          e.imageIndex = 0;
+          e.attemptsLeft = null;
+        case 'rejected':
+          e.imageIndex = 1;
+          e.attemptsLeft = null;
+        case 'failed':
+          e.imageIndex = 4;
+          e.attemptsLeft = null;
+        case 'cancelled':
+          // Sent and unacked, but no longer retrying: back to the plain clock.
+          e.attemptsLeft = null;
+        default:
+          continue;
+      }
+      changed = true;
+    }
+    if (changed) _rebuildMessages();
+  }
+
+  /// Asks the retry queue to stop resending [entry] (the radio's TX CLR).
+  void _stopResending(_AprsEntry entry) {
+    final msgId = int.tryParse(entry.messageId ?? '');
+    if (msgId == null) return;
+    _broker.dispatch(
+      deviceId: _aprsDeviceId,
+      name: 'CancelAprsMessageRetry',
+      data: msgId,
+      store: false,
+    );
+  }
+
   void _updateDeliveryIcon(
     AprsPacket aprsPacket,
     AX25Packet packet,
@@ -2223,6 +2307,27 @@ class _AprsTabState extends State<AprsTab>
     if (_selectedContact != null) {
       final name = _contactRouteName(_selectedContact!);
       if (name.isNotEmpty) return _routeArrayForName(name);
+    }
+    return _getSelectedRoute();
+  }
+
+  /// Route for a message this app sends to [callsign] on the user's behalf: the
+  /// station's own route when it has a usable one, otherwise the route chosen in
+  /// the header dropdown.
+  ///
+  /// A message typed into a conversation takes the contact's route
+  /// ([_routeForSending]), so a command the app sends to the same station has to
+  /// resolve it the same way or it goes out on a different path than the user's
+  /// own messages to that station — which, for a route with no digipeater in it,
+  /// means nothing repeats it. Unlike [_routeForSending] this falls back rather
+  /// than sending with no path at all when the contact names a route that no
+  /// longer exists, since there is no conversation on screen to carry the
+  /// "route is missing" warning.
+  List<String>? _routeForCallsign(String callsign) {
+    final name = _contactRouteName(callsign);
+    if (name.isNotEmpty) {
+      final route = _routeArrayForName(name);
+      if (route != null) return route;
     }
     return _getSelectedRoute();
   }
@@ -2361,15 +2466,23 @@ class _AprsTabState extends State<AprsTab>
     );
   }
 
-  /// Opens the APRS OTA ops list and, when the user picks a host to chase,
-  /// sends `CHASE <callsign>` to the `OTA` bot and opens that conversation.
+  /// Opens APRS OTA and, when the user picks a host to chase, sends
+  /// `CHASE <callsign>` to the `OTA` bot and opens that conversation.
   ///
   /// The bot needs a position report within five minutes to score the contact,
-  /// so this also asks the software beacon to send one when it is configured
-  /// to include a location.
+  /// which the user sends themselves: see [_sendSoftwareBeaconNow].
   Future<void> _openOtaOps() async {
     final messenger = ScaffoldMessenger.of(context);
-    final request = await showAprsOtaDialog(context);
+    OtaHostSession.instance.attach();
+
+    final request = await showAprsOtaDialog(
+      context,
+      // The bot declines an op that reaches it over APRS-IS, so hosting needs a
+      // radio that can carry APRS, not just the internet gateway.
+      transmitsOverRf: _getPreferredAprsRadioDeviceId() != -1,
+      onRequestBeacon: _sendSoftwareBeaconNow,
+      onSendCommand: _sendOtaCommand,
+    );
     if (request == null || !mounted) return;
 
     final l10n = AppLocalizations.of(context);
@@ -2391,17 +2504,8 @@ class _AprsTabState extends State<AprsTab>
         destination: OtaClient.botCallsign,
         message: OtaClient.chaseCommand(request.callsign),
         radioDeviceId: radioDeviceId,
-        route: _getSelectedRoute(),
+        route: _routeForCallsign(OtaClient.botCallsign),
       ),
-      store: false,
-    );
-
-    // The chaser's position is what completes the QSO, so follow the command
-    // with a beacon rather than leaving the user to remember.
-    _broker.dispatch(
-      deviceId: 0,
-      name: 'SendSoftwareBeacon',
-      data: true,
       store: false,
     );
 
@@ -2414,57 +2518,50 @@ class _AprsTabState extends State<AprsTab>
     );
   }
 
-  /// Opens the APRS OTA host console, which runs an op of our own: it sends
-  /// HOST, QSL, STAY, BLAST and DONE to the `OTA` bot as ordinary addressed
-  /// APRS messages and asks the software beacon for the position reports the
-  /// bot requires. The OTA conversation is opened afterwards so the bot's side
-  /// of the exchange reads as the normal thread it is.
-  Future<void> _openOtaHost() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final l10n = AppLocalizations.of(context);
-    OtaHostSession.instance.attach();
-
-    await showAprsOtaHostDialog(
-      context,
-      // The bot declines an op that reaches it over APRS-IS, so hosting needs
-      // a radio that can carry APRS, not just the internet gateway.
-      transmitsOverRf: _getPreferredAprsRadioDeviceId() != -1,
-      onRequestBeacon: () {
-        _broker.dispatch(
-          deviceId: 0,
-          name: 'SendSoftwareBeacon',
-          data: true,
-          store: false,
-        );
-      },
-      onSendCommand: (message) async {
-        final radioDeviceId = _getPreferredAprsRadioDeviceId();
-        if (radioDeviceId == -1) {
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(l10n.aprsNoChannel),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-          return false;
-        }
-        _broker.dispatch(
-          deviceId: _aprsDeviceId,
-          name: 'SendAprsMessage',
-          data: AprsSendMessageData(
-            destination: OtaClient.botCallsign,
-            message: message,
-            radioDeviceId: radioDeviceId,
-            route: _getSelectedRoute(),
-          ),
-          store: false,
-        );
-        return true;
-      },
+  /// Puts one OTA bot command on the air, reporting whether it went. This is
+  /// what the APRS OTA dialog's host tab sends its commands through, so the
+  /// radio and the route stay the tab's business.
+  Future<bool> _sendOtaCommand(String message) async {
+    final radioDeviceId = _getPreferredAprsRadioDeviceId();
+    if (radioDeviceId == -1) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).aprsNoChannel),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return false;
+    }
+    _broker.dispatch(
+      deviceId: _aprsDeviceId,
+      name: 'SendAprsMessage',
+      data: AprsSendMessageData(
+        destination: OtaClient.botCallsign,
+        message: message,
+        radioDeviceId: radioDeviceId,
+        route: _routeForCallsign(OtaClient.botCallsign),
+      ),
+      store: false,
     );
+    return true;
+  }
 
-    if (!mounted) return;
-    _openConversation(OtaClient.botCallsign);
+  /// Sends a one-off position report, when the user asks for one.
+  ///
+  /// Nothing beacons automatically alongside an OTA command: a beacon sent on
+  /// the back of a CHASE or a HOST put two transmissions on the channel close
+  /// together, where they stepped on each other and on the digipeat of the
+  /// first. The bot allows five minutes for the position report, so the user
+  /// sends it when the air is clear — from the host panel's button, or the
+  /// software beacon as usual.
+  void _sendSoftwareBeaconNow() {
+    _broker.dispatch(
+      deviceId: 0,
+      name: 'SendSoftwareBeacon',
+      data: true,
+      store: false,
+    );
   }
 
   /// Opens the weather dialog and, on confirmation, sends a weather request to
@@ -2700,6 +2797,13 @@ class _AprsTabState extends State<AprsTab>
         message.longitude != null &&
         (message.latitude != 0 || message.longitude != 0);
     final hasChannel = ChannelShare.findAll(message.message).isNotEmpty;
+    // Only a sent message that is still being retried can be stopped.
+    final entry = message.tag is _AprsEntry ? message.tag as _AprsEntry : null;
+    final canStopResending =
+        entry != null &&
+        entry.sender &&
+        entry.imageIndex == -1 &&
+        (entry.attemptsLeft ?? 0) > 0;
 
     final selected = await showMenu<String>(
       context: context,
@@ -2721,6 +2825,11 @@ class _AprsTabState extends State<AprsTab>
           PopupMenuItem<String>(
             value: 'setReceiver',
             child: Text(AppLocalizations.of(context).aprsSetReceiver),
+          ),
+        if (canStopResending)
+          PopupMenuItem<String>(
+            value: 'stopResending',
+            child: Text(AppLocalizations.of(context).aprsStopResending),
           ),
         PopupMenuItem<String>(
           value: 'copyMessage',
@@ -2754,6 +2863,9 @@ class _AprsTabState extends State<AprsTab>
           longitude: message.longitude!,
           title: message.senderCallsign,
         );
+        break;
+      case 'stopResending':
+        if (entry != null) _stopResending(entry);
         break;
       case 'copyMessage':
         _copyMessage(message);
@@ -3111,19 +3223,6 @@ class _AprsTabState extends State<AprsTab>
             children: [const SizedBox(width: 20), Text(l10n.aprsOtaMenu)],
           ),
         ),
-        PopupMenuItem<String>(
-          value: 'otaHost',
-          height: menuItemHeight,
-          padding: menuItemPadding,
-          // Hosting has to go out over RF, so APRS-IS alone is not enough here.
-          enabled:
-              _allowTransmit &&
-              (_hasAprsChannel || _isAprsSatActive) &&
-              (!_isRadioLockedForOtherUsage || _isAprsSatActive),
-          child: Row(
-            children: [const SizedBox(width: 20), Text(l10n.aprsOtaHostMenu)],
-          ),
-        ),
         const PopupMenuDivider(height: 8),
         PopupMenuItem<String>(
           value: 'beaconSettings',
@@ -3224,9 +3323,6 @@ class _AprsTabState extends State<AprsTab>
           break;
         case 'otaOps':
           _openOtaOps();
-          break;
-        case 'otaHost':
-          _openOtaHost();
           break;
         case 'beaconSettings':
           if (context.mounted) showEditBeaconSettingsDialog(context);

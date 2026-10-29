@@ -28,6 +28,10 @@ class ChatMessage {
   /// Optional colour for [icon]; falls back to the theme's onSurfaceVariant.
   /// Used to make distress messages (SARSAT beacons) stand out.
   final Color? iconColor;
+
+  /// Optional short label drawn beside [icon], used for the number of
+  /// transmissions a message still has left before it is given up on.
+  final String? iconBadge;
   final Object? tag;
 
   /// Optional widget drawn inside the bubble (to the left of the text), used
@@ -59,6 +63,7 @@ class ChatMessage {
     this.longitude,
     this.icon,
     this.iconColor,
+    this.iconBadge,
     this.tag,
     this.bubbleSymbol,
     this.bubbleColorOverride,
@@ -324,7 +329,8 @@ class _ChatWidgetState extends State<ChatWidget> {
               child: Text(
                 _formatTimestamp(message.time),
                 style: TextStyle(
-                  color: widget.timeTextColor ??
+                  color:
+                      widget.timeTextColor ??
                       Theme.of(context).colorScheme.onSurfaceVariant,
                   fontSize: 12,
                 ),
@@ -354,6 +360,23 @@ class _ChatWidgetState extends State<ChatWidget> {
     );
   }
 
+  /// The message's status icon, with its badge beside it when it has one.
+  Widget _buildStatusIcon(ChatMessage message) {
+    final color =
+        message.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
+    final icon = Icon(message.icon, size: 16, color: color);
+    final badge = message.iconBadge;
+    if (badge == null || badge.isEmpty) return icon;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        icon,
+        const SizedBox(width: 2),
+        Text(badge, style: TextStyle(fontSize: 10, color: color)),
+      ],
+    );
+  }
+
   /// Builds the route/callsign header. When [withIcon] is true the message's
   /// icon is shown next to the header and the whole header becomes tappable
   /// (used for recordings and other media that have no text bubble).
@@ -362,22 +385,15 @@ class _ChatWidgetState extends State<ChatWidget> {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (withIcon && message.icon != null) ...[
-          _wrapIconTap(
-            message,
-            Icon(
-              message.icon,
-              size: 16,
-              color: message.iconColor ??
-                  Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
+          _wrapIconTap(message, _buildStatusIcon(message)),
           const SizedBox(width: 4),
         ],
         Flexible(
           child: Text(
             message.route,
             style: TextStyle(
-              color: widget.routeTextColor ??
+              color:
+                  widget.routeTextColor ??
                   Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
@@ -454,22 +470,12 @@ class _ChatWidgetState extends State<ChatWidget> {
               message.imagePath == null)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: _wrapIconTap(
-                message,
-                Icon(
-                  message.icon,
-                  size: 16,
-                  color: message.iconColor ??
-                      Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
+              child: _wrapIconTap(message, _buildStatusIcon(message)),
             ),
           // Bubble
           Flexible(
             child: Container(
-              constraints: BoxConstraints(
-                maxWidth: widget.bubbleMaxWidth,
-              ),
+              constraints: BoxConstraints(maxWidth: widget.bubbleMaxWidth),
               decoration: BoxDecoration(
                 color: _getBubbleColor(message),
                 borderRadius: BorderRadius.only(
@@ -484,7 +490,9 @@ class _ChatWidgetState extends State<ChatWidget> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Theme.of(context).shadowColor.withValues(alpha: 0.15),
+                    color: Theme.of(
+                      context,
+                    ).shadowColor.withValues(alpha: 0.15),
                     offset: const Offset(1, 1),
                     blurRadius: 2,
                   ),
@@ -522,9 +530,7 @@ class _ChatWidgetState extends State<ChatWidget> {
                           ),
                         ],
                         if (message.message.trim().isNotEmpty)
-                          Flexible(
-                            child: _MessageBody(message: message),
-                          ),
+                          Flexible(child: _MessageBody(message: message)),
                         // Authentication indicator (lock = verified, broken =
                         // failed). Surfaces AX25 auth state on the bubble itself,
                         // complementing the bubble color coding.
@@ -542,15 +548,7 @@ class _ChatWidgetState extends State<ChatWidget> {
               message.imagePath == null)
             Padding(
               padding: const EdgeInsets.only(left: 4),
-              child: _wrapIconTap(
-                message,
-                Icon(
-                  message.icon,
-                  size: 16,
-                  color: message.iconColor ??
-                      Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
+              child: _wrapIconTap(message, _buildStatusIcon(message)),
             ),
         ],
       ),
@@ -813,7 +811,10 @@ class _ChannelChip extends StatelessWidget {
               if (freq.isNotEmpty)
                 Text(
                   freq,
-                  style: TextStyle(fontSize: 9, color: palette.onChannelSecondary),
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: palette.onChannelSecondary,
+                  ),
                 ),
             ],
           ),
@@ -842,4 +843,3 @@ class _ChannelChip extends StatelessWidget {
     );
   }
 }
-

@@ -923,8 +923,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         int.tryParse(_echoLinkProxyPortController.text.trim()) ?? 8100;
     _settings.echoLinkProxyPassword =
         _echoLinkProxyPasswordController.text.trim().isEmpty
-            ? 'PUBLIC'
-            : _echoLinkProxyPasswordController.text.trim();
+        ? 'PUBLIC'
+        : _echoLinkProxyPasswordController.text.trim();
     _settings.aprsIsServer = _aprsIsServerController.text.trim();
     _settings.aprsIsPort = int.tryParse(_aprsIsPortController.text) ?? 14580;
     _settings.aprsFiApiKey = _aprsFiApiKeyController.text.trim();
@@ -1830,9 +1830,14 @@ class _SettingsDialogState extends State<SettingsDialog>
                         return GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onSecondaryTapDown: (details) =>
-                              _showRouteContextMenu(details.globalPosition, index),
-                          onLongPressStart: (details) =>
-                              _showRouteContextMenu(details.globalPosition, index),
+                              _showRouteContextMenu(
+                                details.globalPosition,
+                                index,
+                              ),
+                          onLongPressStart: (details) => _showRouteContextMenu(
+                            details.globalPosition,
+                            index,
+                          ),
                           child: ListTile(
                             dense: true,
                             title: Text(route.name),
@@ -1853,8 +1858,9 @@ class _SettingsDialogState extends State<SettingsDialog>
                                   icon: Icon(
                                     Icons.delete,
                                     size: 20,
-                                    color:
-                                        canDelete ? Colors.red.shade400 : null,
+                                    color: canDelete
+                                        ? Colors.red.shade400
+                                        : null,
                                   ),
                                   tooltip: canDelete
                                       ? l10n.settingsDeleteRoute
@@ -1879,6 +1885,42 @@ class _SettingsDialogState extends State<SettingsDialog>
                       child: Text(l10n.settingsAdd),
                     ),
                   ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: _sectionDecoration(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.settingsAprsMessages, style: _sectionTitleStyle()),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _settings.aprsMessageRetry,
+                      onChanged: (value) => setState(
+                        () => _settings.aprsMessageRetry = value ?? true,
+                      ),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(
+                          () => _settings.aprsMessageRetry =
+                              !_settings.aprsMessageRetry,
+                        ),
+                        child: Text(l10n.settingsAprsMessageRetry),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.settingsAprsMessageRetryHelp,
+                  style: _secondaryStyle(),
                 ),
               ],
             ),
@@ -2399,8 +2441,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   bool _canMoveRouteUp(int index) => index > 0;
 
   /// True when the route at [index] can swap with the one below it.
-  bool _canMoveRouteDown(int index) =>
-      index < _settings.aprsRoutes.length - 1;
+  bool _canMoveRouteDown(int index) => index < _settings.aprsRoutes.length - 1;
 
   void _moveAprsRoute(int index, int delta) {
     setState(() {
@@ -2414,8 +2455,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// route at [index]; entries are disabled when the move is not possible.
   Future<void> _showRouteContextMenu(Offset position, int index) async {
     final l10n = AppLocalizations.of(context);
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final selected = await showMenu<int>(
       context: context,
       position: RelativeRect.fromRect(
@@ -2867,8 +2907,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             ),
           ),
           const SizedBox(height: 16),
-          const Text('RepeaterBook API token',
-              style: DialogStyles.labelStyle),
+          const Text('RepeaterBook API token', style: DialogStyles.labelStyle),
           const SizedBox(height: 4),
           TextField(
             controller: _repeaterBookTokenController,
@@ -2888,7 +2927,8 @@ class _SettingsDialogState extends State<SettingsDialog>
           Row(
             children: [
               ElevatedButton(
-                onPressed: (_repeaterBookTokenController.text.trim().isNotEmpty &&
+                onPressed:
+                    (_repeaterBookTokenController.text.trim().isNotEmpty &&
                         !_repeaterBookTesting)
                     ? _testRepeaterBookToken
                     : null,
@@ -2903,8 +2943,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                       color: _repeaterBookTesting
                           ? Theme.of(context).colorScheme.onSurfaceVariant
                           : (_repeaterBookTestOk
-                              ? Colors.green.shade700
-                              : Colors.red.shade700),
+                                ? Colors.green.shade700
+                                : Colors.red.shade700),
                     ),
                   ),
                 ),
@@ -2912,10 +2952,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            'Data courtesy of RepeaterBook.com',
-            style: _secondaryStyle(),
-          ),
+          Text('Data courtesy of RepeaterBook.com', style: _secondaryStyle()),
         ],
       ),
     );
@@ -3028,26 +3065,27 @@ class _SettingsDialogState extends State<SettingsDialog>
       final result = await service.checkForUpdate(
         progress: (received, total) {
           if (!mounted) return;
-          setState(() =>
-              _winlinkDbProgress = total > 0 ? received / total : null);
+          setState(
+            () => _winlinkDbProgress = total > 0 ? received / total : null,
+          );
         },
       );
       if (!mounted) return;
       setState(() {
         _winlinkDbBusy = false;
         _winlinkDbProgress = null;
-        _winlinkDbStatusMessage =
-            result == WinlinkUpdateResult.updated
-                ? l10n.settingsWinlinkGatewayDbUpdated
-                : l10n.settingsWinlinkGatewayDbUpToDate;
+        _winlinkDbStatusMessage = result == WinlinkUpdateResult.updated
+            ? l10n.settingsWinlinkGatewayDbUpdated
+            : l10n.settingsWinlinkGatewayDbUpToDate;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _winlinkDbBusy = false;
         _winlinkDbProgress = null;
-        _winlinkDbStatusMessage =
-            l10n.settingsWinlinkGatewayDbFailed(e.toString());
+        _winlinkDbStatusMessage = l10n.settingsWinlinkGatewayDbFailed(
+          e.toString(),
+        );
         _winlinkDbStatusIsError = true;
       });
     }
@@ -3134,7 +3172,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     final installed = service.isAvailable;
     final statusText = installed
         ? l10n.settingsWinlinkGatewayDbInstalled(
-            service.installedVersion, service.gatewayCount)
+            service.installedVersion,
+            service.gatewayCount,
+          )
         : l10n.settingsWinlinkGatewayDbNotInstalled;
 
     return Container(
@@ -3145,13 +3185,14 @@ class _SettingsDialogState extends State<SettingsDialog>
         children: [
           Text(l10n.settingsWinlinkGatewayDbTitle, style: _sectionTitleStyle()),
           const SizedBox(height: 8),
-          Text(l10n.settingsWinlinkGatewayDbInfo, style: DialogStyles.bodyStyle),
+          Text(
+            l10n.settingsWinlinkGatewayDbInfo,
+            style: DialogStyles.bodyStyle,
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(
-                child: Text(statusText, style: _secondaryStyle()),
-              ),
+              Expanded(child: Text(statusText, style: _secondaryStyle())),
               const SizedBox(width: 12),
               ElevatedButton.icon(
                 onPressed: _winlinkDbBusy ? null : _downloadWinlinkGatewayDb,
@@ -3186,8 +3227,10 @@ class _SettingsDialogState extends State<SettingsDialog>
                   setState(() => service.autoDownload = value),
               title: Text(
                 l10n.settingsWinlinkGatewayDbAuto,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
               ),
               subtitle: Text(
                 l10n.settingsWinlinkGatewayDbAutoSubtitle,
@@ -3325,8 +3368,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                         value: _settings.echoLinkProxyEnabled,
                         onChanged: (value) {
                           setState(
-                            () => _settings.echoLinkProxyEnabled =
-                                value ?? false,
+                            () =>
+                                _settings.echoLinkProxyEnabled = value ?? false,
                           );
                         },
                       ),
@@ -3358,9 +3401,9 @@ class _SettingsDialogState extends State<SettingsDialog>
                         child: GestureDetector(
                           onTap: _settings.echoLinkProxyEnabled
                               ? () => setState(
-                                    () => _settings.echoLinkProxyAuto =
-                                        !_settings.echoLinkProxyAuto,
-                                  )
+                                  () => _settings.echoLinkProxyAuto =
+                                      !_settings.echoLinkProxyAuto,
+                                )
                               : null,
                           child: Text(l10n.settingsEchoLinkProxyAuto),
                         ),
@@ -3390,7 +3433,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                             const SizedBox(height: 4),
                             TextField(
                               controller: _echoLinkProxyHostController,
-                              enabled: _settings.echoLinkProxyEnabled &&
+                              enabled:
+                                  _settings.echoLinkProxyEnabled &&
                                   !_settings.echoLinkProxyAuto,
                               decoration: _inputDecoration(),
                             ),
@@ -3410,7 +3454,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                             const SizedBox(height: 4),
                             TextField(
                               controller: _echoLinkProxyPortController,
-                              enabled: _settings.echoLinkProxyEnabled &&
+                              enabled:
+                                  _settings.echoLinkProxyEnabled &&
                                   !_settings.echoLinkProxyAuto,
                               keyboardType: TextInputType.number,
                               decoration: _inputDecoration(),
@@ -3428,7 +3473,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                   const SizedBox(height: 4),
                   TextField(
                     controller: _echoLinkProxyPasswordController,
-                    enabled: _settings.echoLinkProxyEnabled &&
+                    enabled:
+                        _settings.echoLinkProxyEnabled &&
                         !_settings.echoLinkProxyAuto,
                     decoration: _inputDecoration(),
                   ),

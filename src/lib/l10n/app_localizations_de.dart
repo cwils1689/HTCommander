@@ -730,6 +730,16 @@ class AppLocalizationsDe extends AppLocalizations {
       'Empfangen Sie APRS-Verkehr innerhalb dieses Bereichs Ihrer letzten bestätigten GPS-Position, die von einem Funkgerät oder seriellen GPS stammt.';
 
   @override
+  String get settingsAprsMessages => 'Messages';
+
+  @override
+  String get settingsAprsMessageRetry => 'Resend messages until acknowledged';
+
+  @override
+  String get settingsAprsMessageRetryHelp =>
+      'An addressed message is sent up to 5 times, a minute apart, until the station acknowledges it. The message shows how many tries are left, and is marked undelivered if none are answered. Turn this off to send once.';
+
+  @override
   String get settingsAprsIsGateToRf =>
       'Internet-Nachrichten an HF weiterleiten (IGate)';
 
@@ -2777,10 +2787,19 @@ class AppLocalizationsDe extends AppLocalizations {
   String get aprsDigipeaterMenu => 'Digipeater...';
 
   @override
+  String get aprsStopResending => 'Stop resending';
+
+  @override
   String get aprsOtaMenu => 'APRS OTA...';
 
   @override
-  String get otaTitle => 'APRS OTA — on the air now';
+  String get otaDialogTitle => 'APRS OTA';
+
+  @override
+  String get otaTabOnAir => 'On the air';
+
+  @override
+  String get otaTabHost => 'Host an op';
 
   @override
   String get otaRefresh => 'Refresh';
@@ -2835,7 +2854,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get otaNobodyOnAirHint =>
-      'No APRS OTA ops are running right now. Check back later, or host one yourself by sending HOST to the OTA bot.';
+      'No APRS OTA ops are running right now. Check back later, or go on the air yourself on the \"Host an op\" tab.';
 
   @override
   String otaChaseTitle(String callsign) {
@@ -2852,7 +2871,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String otaChaseSent(String callsign) {
-    return 'CHASE $callsign sent to OTA.';
+    return 'CHASE $callsign sent. Beacon your position within 5 minutes.';
   }
 
   @override
@@ -2882,14 +2901,8 @@ class AppLocalizationsDe extends AppLocalizations {
   String get otaErrorGeneric => 'Could not reach aprsota.org.';
 
   @override
-  String get aprsOtaHostMenu => 'Host an Op...';
-
-  @override
-  String get otaHostTitle => 'APRS OTA — host an op';
-
-  @override
   String get otaHostIntro =>
-      'Hosting puts you on the air so chasers can work you. HOST goes to the OTA bot, a position report follows within 5 minutes, and the bot confirms the op. Both have to go out over RF.';
+      'Hosting puts you on the air so chasers can work you. HOST goes to the OTA bot, you send a position report within 5 minutes, and the bot confirms the op. Both have to go out over RF.';
 
   @override
   String otaHostStation(String station) {
@@ -2941,11 +2954,11 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String otaHostAwaitingBody(String time) {
-    return 'HOST is out and a position report has followed it. The bot confirms the op when it hears the beacon — $time left of the 5 minute window.';
+    return 'HOST is out. Now send a position report: the bot puts you on the air when it hears your beacon, and $time is left of its 5 minute window.';
   }
 
   @override
-  String get otaHostBeaconAgain => 'Beacon again';
+  String get otaHostSendBeacon => 'Send position report';
 
   @override
   String get otaHostStopWaiting => 'Stop waiting';

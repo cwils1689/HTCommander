@@ -5,13 +5,16 @@ http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //
-// aprs_ota_host_dialog.dart - "APRS OTA: host an op".
+// aprs_ota_host_panel.dart - the "Host an op" half of the APRS OTA dialog.
 //
 // The host side of APRS OTA, which is a conversation with the `OTA` bot: HOST
 // goes out, a position report follows within five minutes, and the bot puts the
-// op on the air. From there the dialog is a console for the op — the chasers
-// waiting on a QSL, the time left, and the commands that answer them — built
-// entirely out of what the bot has said, since there is no API for the host.
+// op on the air. From there this is a console for the op — the chasers waiting
+// on a QSL, the time left, and the commands that answer them — built entirely
+// out of what the bot has said, since there is no API for the host.
+//
+// It is a panel rather than a dialog of its own: APRS OTA is one menu entry,
+// with chasing and hosting as its two tabs (see [showAprsOtaDialog]).
 //
 // Nothing here touches the radio: the APRS tab owns that and passes in
 // [onSendCommand] and [onRequestBeacon].
@@ -29,45 +32,31 @@ import '../l10n/app_localizations.dart';
 import '../ota/ota_client.dart';
 import '../ota/ota_host_session.dart';
 import '../services/data_broker_client.dart';
-import 'dialog_utils.dart';
 
-/// Shows the host console.
+/// The "Host an op" panel: everything a host does during an op.
 ///
 /// [onSendCommand] puts one message body on the air addressed to the OTA bot
 /// and reports whether it went. [onRequestBeacon] asks the software beacon for
-/// a one-off position report, which is what actually starts and sustains an op.
-Future<void> showAprsOtaHostDialog(
-  BuildContext context, {
-  required Future<bool> Function(String message) onSendCommand,
-  required VoidCallback onRequestBeacon,
-  required bool transmitsOverRf,
-}) {
-  return showDialog<void>(
-    context: context,
-    builder: (_) => _AprsOtaHostDialog(
-      onSendCommand: onSendCommand,
-      onRequestBeacon: onRequestBeacon,
-      transmitsOverRf: transmitsOverRf,
-    ),
-  );
-}
-
-class _AprsOtaHostDialog extends StatefulWidget {
+/// a one-off position report, which is what actually starts an op — sent only
+/// when the user presses for it, never on the back of a command, since two
+/// transmissions that close together step on each other.
+class AprsOtaHostPanel extends StatefulWidget {
   final Future<bool> Function(String message) onSendCommand;
   final VoidCallback onRequestBeacon;
   final bool transmitsOverRf;
 
-  const _AprsOtaHostDialog({
+  const AprsOtaHostPanel({
+    super.key,
     required this.onSendCommand,
     required this.onRequestBeacon,
     required this.transmitsOverRf,
   });
 
   @override
-  State<_AprsOtaHostDialog> createState() => _AprsOtaHostDialogState();
+  State<AprsOtaHostPanel> createState() => _AprsOtaHostPanelState();
 }
 
-class _AprsOtaHostDialogState extends State<_AprsOtaHostDialog> {
+class _AprsOtaHostPanelState extends State<AprsOtaHostPanel> {
   final DataBrokerClient _broker = DataBrokerClient();
   final OtaHostSession _session = OtaHostSession.instance;
   final TextEditingController _descriptionController = TextEditingController();
@@ -77,11 +66,6 @@ class _AprsOtaHostDialogState extends State<_AprsOtaHostDialog> {
 
   /// Set while a command is in flight, so a button cannot be double-sent.
   bool _sending = false;
-
-  /// The last beacon this dialog asked for, so the prompt does not produce a
-  /// second one right behind the first.
-  DateTime? _lastBeaconAt;
-  DateTime? _handledPrompt;
 
   @override
   void initState() {
@@ -108,49 +92,27 @@ class _AprsOtaHostDialogState extends State<_AprsOtaHostDialog> {
   void _onSessionChanged() {
     if (!mounted) return;
     setState(() {});
-    _beaconForPromptIfNeeded();
   }
 
-  /// The bot asks for a position report after HOST. One already went out with
-  /// the command, so only beacon again if that was a while ago.
-  void _beaconForPromptIfNeeded() {
-    final prompt = _session.beaconPromptAt;
-    if (prompt == null || prompt == _handledPrompt) return;
-    _handledPrompt = prompt;
-    final last = _lastBeaconAt;
-    if (last != null &&
-        DateTime.now().difference(last) < const Duration(seconds: 45)) {
-      return;
-    }
-    _beacon();
-  }
-
-  void _beacon() {
-    _lastBeaconAt = DateTime.now();
-    widget.onRequestBeacon();
-  }
+  /// Sends the position report the bot is waiting for. The user's call, not
+  /// ours: it is a second transmission, and the bot allows five minutes for it.
+  void _beacon() => widget.onRequestBeacon();
 
   // --- Sending -------------------------------------------------------------
 
-  Future<void> _send(String message, {bool beaconAfter = false}) async {
+  Future<void> _send(String message) async {
     if (_sending) return;
     setState(() => _sending = true);
     final sent = await widget.onSendCommand(message);
-    if (sent) {
-      _session.noteCommandSent(message);
-      if (beaconAfter) _beacon();
-    }
+    if (sent) _session.noteCommandSent(message);
     if (!mounted) return;
     setState(() => _sending = false);
   }
 
   Future<void> _goOnAir() async {
-    // A position report has to follow the command, so send one straight away
-    // rather than waiting for the bot's prompt to reach us.
-    await _send(
-      OtaHostSession.hostCommand(_descriptionController.text),
-      beaconAfter: true,
-    );
+    // The position report that puts us on the air is the next step, and the
+    // panel asks for it: nothing is beaconed on the back of the command.
+    await _send(OtaHostSession.hostCommand(_descriptionController.text));
   }
 
   Future<void> _qsl(OtaChaser chaser) async {
@@ -192,7 +154,7 @@ class _AprsOtaHostDialogState extends State<_AprsOtaHostDialog> {
     await _send(OtaHostSession.doneCommand(signoff));
   }
 
-  /// A small composer used for the QSL, BLAST and DONE free text. Returns null
+  /// Opens the composer for the QSL, BLAST and DONE free text. Returns null
   /// when the user backs out, or the (possibly empty) text they entered.
   Future<String?> _promptForText({
     required String title,
@@ -201,55 +163,18 @@ class _AprsOtaHostDialogState extends State<_AprsOtaHostDialog> {
     required String hint,
     required String confirm,
     bool requireText = false,
-  }) async {
-    final controller = TextEditingController();
-    final l10n = AppLocalizations.of(context);
-    final result = await showDialog<String>(
+  }) {
+    return showDialog<String>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setInner) => AlertDialog(
-          title: Text(title),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(body),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                maxLength: _maxFreeTextLength,
-                decoration: InputDecoration(
-                  labelText: label,
-                  hintText: hint,
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => setInner(() {}),
-                onSubmitted: (value) {
-                  if (requireText && value.trim().isEmpty) return;
-                  Navigator.of(ctx).pop(value.trim());
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.commonCancel),
-            ),
-            FilledButton(
-              onPressed: (requireText && controller.text.trim().isEmpty)
-                  ? null
-                  : () => Navigator.of(ctx).pop(controller.text.trim()),
-              child: Text(confirm),
-            ),
-          ],
-        ),
+      builder: (_) => _TextPromptDialog(
+        title: title,
+        body: body,
+        label: label,
+        hint: hint,
+        confirm: confirm,
+        requireText: requireText,
       ),
     );
-    controller.dispose();
-    return result;
   }
 
   // --- Preflight -----------------------------------------------------------
@@ -310,22 +235,21 @@ class _AprsOtaHostDialogState extends State<_AprsOtaHostDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return HTDialog(
-      title: l10n.otaHostTitle,
-      maxWidth: 580,
-      maxHeight: 680,
-      content: _buildBody(l10n),
-      actions: [
-        TextButton(
-          onPressed: () => launchUrl(
-            Uri.parse(OtaClient.hostHandbookUrl),
-            mode: LaunchMode.externalApplication,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(child: _buildBody(l10n)),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => launchUrl(
+              Uri.parse(OtaClient.hostHandbookUrl),
+              mode: LaunchMode.externalApplication,
+            ),
+            icon: const Icon(Icons.open_in_new, size: 16),
+            label: Text(l10n.otaHostHandbook),
           ),
-          child: Text(l10n.otaHostHandbook),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.commonClose),
         ),
       ],
     );
@@ -459,10 +383,10 @@ class _AprsOtaHostDialogState extends State<_AprsOtaHostDialog> {
           const SizedBox(height: 16),
           Row(
             children: [
-              OutlinedButton.icon(
+              FilledButton.icon(
                 onPressed: _beacon,
                 icon: const Icon(Icons.my_location, size: 16),
-                label: Text(l10n.otaHostBeaconAgain),
+                label: Text(l10n.otaHostSendBeacon),
               ),
               const Spacer(),
               TextButton(
@@ -485,9 +409,10 @@ class _AprsOtaHostDialogState extends State<_AprsOtaHostDialog> {
     final facts = <String>[];
     if (_session.location != null) facts.add(_session.location!);
     if (minutes != null) facts.add(l10n.otaHostMinutesLeft(minutes));
-    if (_session.qsos != null) facts.add(l10n.otaQsoCount(_session.qsos!));
-    if (_session.points != null)
-      facts.add(l10n.otaHostPoints(_session.points!));
+    final qsos = _session.qsos;
+    if (qsos != null) facts.add(l10n.otaQsoCount(qsos));
+    final points = _session.points;
+    if (points != null) facts.add(l10n.otaHostPoints(points));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -815,3 +740,92 @@ class _Warning {
 /// The bot cuts a command's free text to fit one APRS message, so there is no
 /// point letting the user type much past that.
 const int _maxFreeTextLength = 55;
+
+/// The composer behind the QSL, BLAST and DONE free text.
+///
+/// A widget of its own, rather than a controller created around a
+/// [showDialog] call, because the route keeps the field on screen while it
+/// animates out. A controller disposed the moment `showDialog` returns is
+/// disposed under a live `TextField`, which then rebuilds into a build scope
+/// that has gone — the `_dependents.isEmpty` assertion, with a dirty
+/// `InputDecorator` behind it. Owned here, the controller goes when the field
+/// does.
+class _TextPromptDialog extends StatefulWidget {
+  final String title;
+  final String body;
+  final String label;
+  final String hint;
+  final String confirm;
+
+  /// When set, the confirm button stays disabled until something is typed.
+  final bool requireText;
+
+  const _TextPromptDialog({
+    required this.title,
+    required this.body,
+    required this.label,
+    required this.hint,
+    required this.confirm,
+    required this.requireText,
+  });
+
+  @override
+  State<_TextPromptDialog> createState() => _TextPromptDialogState();
+}
+
+class _TextPromptDialogState extends State<_TextPromptDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final text = _controller.text.trim();
+    if (widget.requireText && text.isEmpty) return;
+    Navigator.of(context).pop(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final blocked = widget.requireText && _controller.text.trim().isEmpty;
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(widget.body),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            maxLength: _maxFreeTextLength,
+            decoration: InputDecoration(
+              labelText: widget.label,
+              hintText: widget.hint,
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            // Only the confirm button's enabled state depends on the text.
+            onChanged: widget.requireText ? (_) => setState(() {}) : null,
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.commonCancel),
+        ),
+        FilledButton(
+          onPressed: blocked ? null : _submit,
+          child: Text(widget.confirm),
+        ),
+      ],
+    );
+  }
+}

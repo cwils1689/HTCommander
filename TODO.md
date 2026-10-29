@@ -67,7 +67,7 @@ together.
 
 ## Features
 
-### 3. Resend messages until an ack is received
+### 3. Resend messages until an ack is received — DONE
 
 Like the Yaesu FT-3DR: after sending an addressed APRS message, retry it until
 the addressee acks, rather than sending once and hoping.
@@ -89,18 +89,57 @@ Needs:
   recognises retransmissions and de-duplicates them — and so bug 2's fix does
   not treat them as separate messages.
 
+**Done**, emulating the Yaesu handhelds. From the FT1DR manual, which the FT3DR
+and FT5DR follow: a message with no ACK after 1 minute is retransmitted, after
+5 attempts it is shown as TX OUT, the remaining attempts appear on the display,
+and `[TX CLR]` cancels the pending ones. So: five transmissions a minute apart,
+then give up.
+
+`lib/handlers/aprs_retry_queue.dart` holds the schedule and the state and
+nothing else — a clock and an `onTransmit` callback go in, so it is tested
+without a radio (`test/aprs_retry_queue_test.dart`). It is persisted at device
+0 as `AprsPendingMessages`; a message whose deadline passed while the app was
+closed comes back failed rather than being put on the air late.
+
+In `aprs_handler.dart` the transmit path is split out as
+`_transmitAprsMessage`, used for the first copy and every retry. A retry is
+rebuilt rather than replayed because `AprsAuth.addAprsAuth` signs with the
+current minute, so stored bytes would carry a stale auth code; rebuilding also
+re-resolves the APRS channel, so a retry can use a radio that reconnected. The
+handler matches acks itself (`_resolveRetryOnAck`), which the APRS tab cannot
+do while it is closed, and compares callsigns without SSIDs since a station may
+answer from another one. An attempt that could not be transmitted is not
+counted against the message.
+
+The APRS tab shows the attempts left beside the clock on a waiting message
+(`ChatMessage.iconBadge`), an error icon for TX OUT, and a "Stop resending"
+item in the message context menu. `Settings > APRS > Messages` turns the whole
+thing off.
+
+Still open on this:
+
+- The interval and attempt count are constants in `AprsRetryQueue`, not
+  settings; only on/off is exposed.
+- OTA bot commands retry like anything else. The bot acks everything it
+  receives, so a retry means the message genuinely did not arrive — but it is
+  worth watching that retries never trip its per-callsign rate limits.
+
 ### 4. APRS OTA (aprsota.org) — DONE
 
 On-the-air activity run through the `OTA` APRS bot: a host goes on the air from
 wherever they are and chasers work them, with the website scoring it.
 
-**Chasing** is `APRS OTA...` in the APRS tab menu: `lib/ota/ota_client.dart`
-reads `/api/v1/now` (bearer token pasted by the user, kept at device 0 as
-`OtaApiToken`; polled at most once a minute, with If-None-Match), and
-`lib/dialogs/aprs_ota_dialog.dart` lists the ops on the air with distance from
-our own fix. Picking one sends `CHASE <callsign>` and a beacon behind it.
+One menu entry, `APRS OTA...` in the APRS tab menu, with the activity's two
+sides as the dialog's tabs (`lib/dialogs/aprs_ota_dialog.dart`).
 
-**Hosting** is `Host an Op...` in the same menu.
+**Chasing** is the "On the air" tab: `lib/ota/ota_client.dart` reads
+`/api/v1/now` (bearer token pasted by the user, kept at device 0 as
+`OtaApiToken`; polled at most once a minute, with If-None-Match), and the tab
+lists the ops on the air with distance from our own fix. Picking one sends
+`CHASE <callsign>`; the position report that completes the contact is the
+user's to send.
+
+**Hosting** is the "Host an op" tab, `lib/dialogs/aprs_ota_host_panel.dart`.
 `lib/ota/ota_host_session.dart` holds the op: the bot's replies are the only
 source of truth, since there is no host-side API, so it parses the beacon
 prompt, the on-air confirmation, the no-beacon nudges, `DE` chase relays, the
@@ -109,14 +148,21 @@ command strings and holds each command back for the interval the bot documents,
 because tripping a rate limit just makes the bot go quiet. State is persisted
 as `OtaHostOpState` and timed out on restore against the bot's own limits (the
 5-minute beacon window, the 2-hour op cap) so a stale op never reads as live.
-`lib/dialogs/aprs_ota_host_dialog.dart` is the console over it: preflight
-checks that block a doomed HOST (no callsign, no RF-capable radio, status-only
-beacon), the countdown while the bot waits for a position report, then the op's
-numbers, the queue of chasers waiting on a QSL, and STAY / TIME / INFO /
-CHASERS / BLAST / QSL / DONE. The APRS tab keeps the radio and passes in the
-send and beacon callbacks.
+The panel is the console over it: preflight checks that block a doomed HOST (no
+callsign, no RF-capable radio, status-only beacon), the countdown while the bot
+waits for a position report, then the op's numbers, the queue of chasers
+waiting on a QSL, and STAY / TIME / INFO / CHASERS / BLAST / QSL / DONE. The
+APRS tab keeps the radio and passes in the send and beacon callbacks.
 
 Parsing of the bot's replies is covered by `test/ota_host_session_test.dart`.
+
+**No automatic position report.** Both sides originally beaconed on the back
+of their command, first immediately and then after a 10 s delay. Both stepped
+on the air: the beacon collided with the command, with its ack, and with the
+digipeat of the command. So nothing beacons by itself now. The host panel asks
+for one with a button while the bot waits, the chase snackbar says to send one,
+and the bot allows five minutes either way. Worth revisiting with a longer or
+channel-aware delay, but only with a way to tell whether the air is clear.
 
 Still open on this:
 
@@ -124,3 +170,7 @@ Still open on this:
   back to English, as the rest of the OTA strings already do.
 - Hosting inherits bug 1 above: the commands go out on whichever channel
   happens to be named `APRS`.
+- `SMS` and weather gateway messages still take the route from the header
+  dropdown (`_getSelectedRoute`) rather than the gateway's own contact route,
+  which is the same mismatch that stopped CHASE being digipeated until
+  `_routeForCallsign` was introduced. Likely worth the same fix.

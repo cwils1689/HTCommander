@@ -32,6 +32,10 @@ class AppSettings {
   int aprsIsPort;
   int aprsIsRangeKm;
   bool aprsIsGateToRf;
+
+  /// Resend an addressed message until the far end acks it, the way a Yaesu
+  /// handheld does. On by default.
+  bool aprsMessageRetry;
   String aprsIsPasscode;
 
   // APRS cloud notifications (HTCloudServer push) - APRS tab. When enabled the
@@ -191,6 +195,7 @@ class AppSettings {
     this.aprsIsPort = 14580,
     this.aprsIsRangeKm = 0,
     this.aprsIsGateToRf = false,
+    this.aprsMessageRetry = true,
     this.aprsIsPasscode = '',
     this.aprsCloudNotifications = false,
     this.aprsFiApiKey = '',
@@ -246,6 +251,7 @@ class AppSettings {
     int? aprsIsPort,
     int? aprsIsRangeKm,
     bool? aprsIsGateToRf,
+    bool? aprsMessageRetry,
     String? aprsIsPasscode,
     bool? aprsCloudNotifications,
     String? aprsFiApiKey,
@@ -300,6 +306,7 @@ class AppSettings {
       aprsIsPort: aprsIsPort ?? this.aprsIsPort,
       aprsIsRangeKm: aprsIsRangeKm ?? this.aprsIsRangeKm,
       aprsIsGateToRf: aprsIsGateToRf ?? this.aprsIsGateToRf,
+      aprsMessageRetry: aprsMessageRetry ?? this.aprsMessageRetry,
       aprsIsPasscode: aprsIsPasscode ?? this.aprsIsPasscode,
       aprsCloudNotifications:
           aprsCloudNotifications ?? this.aprsCloudNotifications,
@@ -326,8 +333,10 @@ class AppSettings {
       agwpeServerPort: agwpeServerPort ?? this.agwpeServerPort,
       homeAssistantEnabled: homeAssistantEnabled ?? this.homeAssistantEnabled,
       homeAssistantMqttUrl: homeAssistantMqttUrl ?? this.homeAssistantMqttUrl,
-      homeAssistantUsername: homeAssistantUsername ?? this.homeAssistantUsername,
-      homeAssistantPassword: homeAssistantPassword ?? this.homeAssistantPassword,
+      homeAssistantUsername:
+          homeAssistantUsername ?? this.homeAssistantUsername,
+      homeAssistantPassword:
+          homeAssistantPassword ?? this.homeAssistantPassword,
       gpsSerialPort: gpsSerialPort ?? this.gpsSerialPort,
       gpsBaudRate: gpsBaudRate ?? this.gpsBaudRate,
       shareSerialGpsLocation:
@@ -340,8 +349,7 @@ class AppSettings {
       phoneLocationEnabled: phoneLocationEnabled ?? this.phoneLocationEnabled,
       satelliteSupport: satelliteSupport ?? this.satelliteSupport,
       meshCoreSupport: meshCoreSupport ?? this.meshCoreSupport,
-      messageNotifications:
-          messageNotifications ?? this.messageNotifications,
+      messageNotifications: messageNotifications ?? this.messageNotifications,
       maxAprsMessages: maxAprsMessages ?? this.maxAprsMessages,
       maxPackets: maxPackets ?? this.maxPackets,
       maxSstvImages: maxSstvImages ?? this.maxSstvImages,
@@ -360,34 +368,42 @@ class AppSettings {
       allowTransmit:
           (DataBroker.getValue<int>(0, 'AllowTransmit', 0) ?? 0) == 1,
       avatarIcon: _nonEmptyOrNull(
-          DataBroker.getValue<String>(0, 'AvatarIcon', '') ?? ''),
+        DataBroker.getValue<String>(0, 'AvatarIcon', '') ?? '',
+      ),
       avatarImage: _nonEmptyOrNull(
-          DataBroker.getValue<String>(0, 'AvatarImage', '') ?? ''),
+        DataBroker.getValue<String>(0, 'AvatarImage', '') ?? '',
+      ),
       language:
-          DataBroker.getValue<String>(0, LocaleController.storageKey,
-                  LocaleController.systemTag) ??
-              LocaleController.systemTag,
+          DataBroker.getValue<String>(
+            0,
+            LocaleController.storageKey,
+            LocaleController.systemTag,
+          ) ??
+          LocaleController.systemTag,
       themeMode:
-          DataBroker.getValue<String>(0, ThemeController.storageKey,
-                  ThemeController.systemTag) ??
-              ThemeController.systemTag,
+          DataBroker.getValue<String>(
+            0,
+            ThemeController.storageKey,
+            ThemeController.systemTag,
+          ) ??
+          ThemeController.systemTag,
       aprsRoutes: aprsRoutes,
       aprsIsEnabled:
           (DataBroker.getValue<int>(0, 'AprsIsEnabled', 0) ?? 0) == 1,
       aprsIsServer:
           DataBroker.getValue<String>(0, 'AprsIsServer', 'rotate.aprs2.net') ??
-              'rotate.aprs2.net',
+          'rotate.aprs2.net',
       aprsIsPort: DataBroker.getValue<int>(0, 'AprsIsPort', 14580) ?? 14580,
-      aprsIsRangeKm:
-          DataBroker.getValue<int>(0, 'AprsIsRangeKm', 0) ?? 0,
+      aprsIsRangeKm: DataBroker.getValue<int>(0, 'AprsIsRangeKm', 0) ?? 0,
       aprsIsGateToRf:
           (DataBroker.getValue<int>(0, 'AprsIsGateToRf', 0) ?? 0) == 1,
+      aprsMessageRetry:
+          DataBroker.getValue<bool>(0, 'AprsMessageRetry', true) ?? true,
       aprsIsPasscode:
           DataBroker.getValue<String>(0, 'AprsIsPasscode', '') ?? '',
       aprsCloudNotifications:
           (DataBroker.getValue<int>(0, 'AprsCloudNotifications', 0) ?? 0) == 1,
-      aprsFiApiKey:
-          DataBroker.getValue<String>(0, 'AprsFiApiKey', '') ?? '',
+      aprsFiApiKey: DataBroker.getValue<String>(0, 'AprsFiApiKey', '') ?? '',
       repeaterBookToken:
           DataBroker.getValue<String>(0, 'RepeaterBookToken', '') ?? '',
       voiceLanguage:
@@ -417,7 +433,7 @@ class AppSettings {
           DataBroker.getValue<int>(0, 'EchoLinkProxyPort', 8100) ?? 8100,
       echoLinkProxyPassword:
           DataBroker.getValue<String>(0, 'EchoLinkProxyPassword', 'PUBLIC') ??
-              'PUBLIC',
+          'PUBLIC',
       webServerEnabled:
           (DataBroker.getValue<int>(0, 'webServerEnabled', 0) ?? 0) == 1,
       webServerPort: DataBroker.getValue<int>(0, 'webServerPort', 8080) ?? 8080,
@@ -454,8 +470,7 @@ class AppSettings {
           (DataBroker.getValue<int>(0, 'MeshCoreSupport', 0) ?? 0) == 1,
       messageNotifications:
           (DataBroker.getValue<int>(0, 'MessageNotifications', 1) ?? 1) == 1,
-      maxAprsMessages:
-          DataBroker.getValue<int>(0, 'MaxAprsMessages', 0) ?? 0,
+      maxAprsMessages: DataBroker.getValue<int>(0, 'MaxAprsMessages', 0) ?? 0,
       maxPackets: DataBroker.getValue<int>(0, 'MaxPackets', 0) ?? 0,
       maxSstvImages: DataBroker.getValue<int>(0, 'MaxSstvImages', 0) ?? 0,
       maxCommEvents: DataBroker.getValue<int>(0, 'MaxCommEvents', 0) ?? 0,
@@ -505,6 +520,11 @@ class AppSettings {
     );
     DataBroker.dispatch(
       deviceId: 0,
+      name: 'AprsMessageRetry',
+      data: aprsMessageRetry,
+    );
+    DataBroker.dispatch(
+      deviceId: 0,
       name: 'AprsIsPasscode',
       data: aprsIsPasscode,
     );
@@ -513,11 +533,7 @@ class AppSettings {
       name: 'AprsCloudNotifications',
       data: aprsCloudNotifications ? 1 : 0,
     );
-    DataBroker.dispatch(
-      deviceId: 0,
-      name: 'AprsFiApiKey',
-      data: aprsFiApiKey,
-    );
+    DataBroker.dispatch(deviceId: 0, name: 'AprsFiApiKey', data: aprsFiApiKey);
     DataBroker.dispatch(
       deviceId: 0,
       name: 'RepeaterBookToken',

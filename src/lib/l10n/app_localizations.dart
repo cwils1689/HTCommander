@@ -1432,6 +1432,24 @@ abstract class AppLocalizations {
   /// **'Receive APRS traffic within this range of your last confirmed GPS position, obtained from a radio or serial GPS.'**
   String get settingsAprsIsRangeHelp;
 
+  /// No description provided for @settingsAprsMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get settingsAprsMessages;
+
+  /// No description provided for @settingsAprsMessageRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Resend messages until acknowledged'**
+  String get settingsAprsMessageRetry;
+
+  /// No description provided for @settingsAprsMessageRetryHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'An addressed message is sent up to 5 times, a minute apart, until the station acknowledges it. The message shows how many tries are left, and is marked undelivered if none are answered. Turn this off to send once.'**
+  String get settingsAprsMessageRetryHelp;
+
   /// No description provided for @settingsAprsIsGateToRf.
   ///
   /// In en, this message translates to:
@@ -5044,17 +5062,35 @@ abstract class AppLocalizations {
   /// **'Digipeater...'**
   String get aprsDigipeaterMenu;
 
+  /// No description provided for @aprsStopResending.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop resending'**
+  String get aprsStopResending;
+
   /// No description provided for @aprsOtaMenu.
   ///
   /// In en, this message translates to:
   /// **'APRS OTA...'**
   String get aprsOtaMenu;
 
-  /// No description provided for @otaTitle.
+  /// No description provided for @otaDialogTitle.
   ///
   /// In en, this message translates to:
-  /// **'APRS OTA — on the air now'**
-  String get otaTitle;
+  /// **'APRS OTA'**
+  String get otaDialogTitle;
+
+  /// No description provided for @otaTabOnAir.
+  ///
+  /// In en, this message translates to:
+  /// **'On the air'**
+  String get otaTabOnAir;
+
+  /// No description provided for @otaTabHost.
+  ///
+  /// In en, this message translates to:
+  /// **'Host an op'**
+  String get otaTabHost;
 
   /// No description provided for @otaRefresh.
   ///
@@ -5107,7 +5143,7 @@ abstract class AppLocalizations {
   /// No description provided for @otaNobodyOnAirHint.
   ///
   /// In en, this message translates to:
-  /// **'No APRS OTA ops are running right now. Check back later, or host one yourself by sending HOST to the OTA bot.'**
+  /// **'No APRS OTA ops are running right now. Check back later, or go on the air yourself on the \"Host an op\" tab.'**
   String get otaNobodyOnAirHint;
 
   /// No description provided for @otaChaseTitle.
@@ -5131,7 +5167,7 @@ abstract class AppLocalizations {
   /// No description provided for @otaChaseSent.
   ///
   /// In en, this message translates to:
-  /// **'CHASE {callsign} sent to OTA.'**
+  /// **'CHASE {callsign} sent. Beacon your position within 5 minutes.'**
   String otaChaseSent(String callsign);
 
   /// No description provided for @otaTokenIntro.
@@ -5182,22 +5218,10 @@ abstract class AppLocalizations {
   /// **'Could not reach aprsota.org.'**
   String get otaErrorGeneric;
 
-  /// No description provided for @aprsOtaHostMenu.
-  ///
-  /// In en, this message translates to:
-  /// **'Host an Op...'**
-  String get aprsOtaHostMenu;
-
-  /// No description provided for @otaHostTitle.
-  ///
-  /// In en, this message translates to:
-  /// **'APRS OTA — host an op'**
-  String get otaHostTitle;
-
   /// No description provided for @otaHostIntro.
   ///
   /// In en, this message translates to:
-  /// **'Hosting puts you on the air so chasers can work you. HOST goes to the OTA bot, a position report follows within 5 minutes, and the bot confirms the op. Both have to go out over RF.'**
+  /// **'Hosting puts you on the air so chasers can work you. HOST goes to the OTA bot, you send a position report within 5 minutes, and the bot confirms the op. Both have to go out over RF.'**
   String get otaHostIntro;
 
   /// No description provided for @otaHostStation.
@@ -5281,14 +5305,14 @@ abstract class AppLocalizations {
   /// No description provided for @otaHostAwaitingBody.
   ///
   /// In en, this message translates to:
-  /// **'HOST is out and a position report has followed it. The bot confirms the op when it hears the beacon — {time} left of the 5 minute window.'**
+  /// **'HOST is out. Now send a position report: the bot puts you on the air when it hears your beacon, and {time} is left of its 5 minute window.'**
   String otaHostAwaitingBody(String time);
 
-  /// No description provided for @otaHostBeaconAgain.
+  /// No description provided for @otaHostSendBeacon.
   ///
   /// In en, this message translates to:
-  /// **'Beacon again'**
-  String get otaHostBeaconAgain;
+  /// **'Send position report'**
+  String get otaHostSendBeacon;
 
   /// No description provided for @otaHostStopWaiting.
   ///

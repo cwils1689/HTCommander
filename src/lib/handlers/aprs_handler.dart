@@ -17,6 +17,7 @@ import '../radio/ax25_address.dart';
 import '../radio/ax25_packet.dart';
 import '../radio/radio.dart';
 import '../radio/tnc_data_fragment.dart';
+import 'aprs_retry_queue.dart';
 import '../services/data_broker.dart';
 import '../services/data_broker_client.dart';
 import '../services/host_bridge.dart';
@@ -48,6 +49,28 @@ class AprsHandler {
   String? _localCallsignWithId;
 
   int _nextAprsMessageId = 1;
+
+  /// Resends addressed messages that go unacked (see [AprsRetryQueue]).
+  late final AprsRetryQueue _retries = AprsRetryQueue(
+    onTransmit: _retransmit,
+    onStateChanged: _publishDeliveryState,
+    onPersist: (json) => _broker.dispatch(
+      deviceId: 0,
+      name: pendingMessagesSettingKey,
+      data: json,
+      store: true,
+    ),
+  );
+
+  /// Settings key (device 0) holding the serialized retry queue.
+  static const String pendingMessagesSettingKey = 'AprsPendingMessages';
+
+  /// Settings key (device 0) for the "resend until acked" preference.
+  static const String retrySettingKey = 'AprsMessageRetry';
+
+  /// Whether unacked messages are resent. On unless the user turns it off.
+  bool get _retryEnabled =>
+      _broker.getValue<bool>(0, retrySettingKey, true) ?? true;
 
   bool get isStoreReady => _storeReady;
   bool get isDisposed => _disposed;
@@ -137,6 +160,26 @@ class AprsHandler {
         store: false,
       );
     }
+
+    // Cancel requests from the UI (the radio's TX CLR).
+    _broker.subscribe(
+      deviceId: _aprsDeviceId,
+      name: 'CancelAprsMessageRetry',
+      callback: _onCancelAprsMessageRetry,
+    );
+
+    // The APRS tab asking for the delivery state of everything still pending,
+    // which it needs after a restart: the queue only speaks when it acts.
+    _broker.subscribe(
+      deviceId: _aprsDeviceId,
+      name: 'RequestAprsDeliveryStates',
+      callback: _onRequestDeliveryStates,
+    );
+
+    // Resume resending anything that was still waiting on an ack.
+    _retries.restore(
+      _broker.getValue<String>(0, pendingMessagesSettingKey, '') ?? '',
+    );
 
     // Restore the next APRS message id (persisted across restarts).
     _nextAprsMessageId = _broker.getValue<int>(0, 'NextAprsMessageId', 1) ?? 1;
@@ -230,25 +273,62 @@ class AprsHandler {
     if (data is! AprsSendMessageData) return;
     final messageData = data;
 
+    final msgId = _getNextAprsMessageId();
+    final outcome = _transmitAprsMessage(
+      destination: messageData.destination,
+      message: messageData.message,
+      msgId: msgId,
+      radioDeviceId: messageData.radioDeviceId,
+      route: messageData.route,
+    );
+
+    // Nothing went out, so there is nothing to wait for an ack on.
+    if (outcome != AprsTransmitOutcome.sent) return;
+    if (!_retryEnabled) return;
+
+    // Addressed messages carry a sequence id, which is what an ack names. The
+    // far end has a minute to use it before the first retransmission.
+    _retries.add(
+      msgId: msgId,
+      destination: messageData.destination,
+      message: messageData.message,
+      radioDeviceId: messageData.radioDeviceId,
+      route: messageData.route,
+    );
+  }
+
+  /// Sends one copy of an addressed APRS message and echoes it to the UI.
+  ///
+  /// Used for the first transmission and for every retry, because a retry has
+  /// to be rebuilt rather than replayed: [AprsAuth.addAprsAuth] signs with the
+  /// current minute, so stored bytes would carry a stale auth code. Rebuilding
+  /// also re-resolves the APRS channel, letting a retry use a radio that has
+  /// reconnected since.
+  AprsTransmitOutcome _transmitAprsMessage({
+    required String destination,
+    required String message,
+    required int msgId,
+    required int radioDeviceId,
+    List<String>? route,
+  }) {
     final callsign = _broker.getValue<String>(0, 'CallSign', '') ?? '';
     final stationIdInt = _broker.getValue<int>(0, 'StationId', 0) ?? 0;
     final stationId = stationIdInt > 0 ? stationIdInt.toString() : '';
 
     if (callsign.isEmpty) {
       _broker.logError('Cannot send APRS message: Callsign not configured');
-      return;
+      return AprsTransmitOutcome.unavailable;
     }
 
     final srcCallsignWithId = stationId.isEmpty
         ? callsign
         : '$callsign-$stationId';
 
-    final msgId = _getNextAprsMessageId();
     final now = DateTime.now();
     final authResult = _auth.addAprsAuth(
       srcCallsignWithId,
-      messageData.destination,
-      messageData.message,
+      destination,
+      message,
       msgId,
       now,
     );
@@ -256,7 +336,6 @@ class AprsHandler {
     // Build the AX.25 address list.
     final addresses = <AX25Address>[];
     var destAddress = 'APRS';
-    final route = messageData.route;
     if (route != null && route.length >= 2) {
       destAddress = route[1];
     }
@@ -264,7 +343,7 @@ class AprsHandler {
     final srcAddr = AX25Address.parse(srcCallsignWithId);
     if (destAddr == null || srcAddr == null) {
       _broker.logError('Cannot send APRS message: invalid address');
-      return;
+      return AprsTransmitOutcome.unavailable;
     }
     addresses.add(destAddr);
     addresses.add(srcAddr);
@@ -280,23 +359,23 @@ class AprsHandler {
     // A negative radio device id means the message is bound only for the
     // APRS-IS internet service (no radio connected): skip the RF channel lookup
     // and transmit, but still echo the packet so the APRS-IS manager up-gates it.
-    final bool aprsIsOnly = messageData.radioDeviceId < 0;
+    final bool aprsIsOnly = radioDeviceId < 0;
     int aprsChannelId = -1;
     if (!aprsIsOnly) {
-      if (_isRadioInAprsSatMode(messageData.radioDeviceId)) {
+      if (_isRadioInAprsSatMode(radioDeviceId)) {
         // APRSSat mode: the radio is in frequency mode on VFO A (tracking an
         // APRS satellite), not on a stored APRS channel, so transmit on VFO A.
         // NOTE: channel 0 is a placeholder for the frequency-mode transmit
         // channel; the correct value is not yet confirmed and may change.
         aprsChannelId = 0;
       } else {
-        aprsChannelId = _getAprsChannelId(messageData.radioDeviceId);
+        aprsChannelId = _getAprsChannelId(radioDeviceId);
         if (aprsChannelId < 0) {
           _broker.logError(
             'Cannot send APRS message: No APRS channel found on radio '
-            '${messageData.radioDeviceId}',
+            '$radioDeviceId',
           );
-          return;
+          return AprsTransmitOutcome.unavailable;
         }
       }
     }
@@ -319,7 +398,7 @@ class AprsHandler {
 
     if (!aprsIsOnly) {
       _broker.dispatch(
-        deviceId: messageData.radioDeviceId,
+        deviceId: radioDeviceId,
         name: 'TransmitDataFrame',
         data: TransmitDataFrameData(
           packet: ax25Packet,
@@ -342,6 +421,55 @@ class AprsHandler {
         store: false,
       );
     }
+    return AprsTransmitOutcome.sent;
+  }
+
+  /// One retry from the queue.
+  AprsTransmitOutcome _retransmit(AprsPendingMessage pending) {
+    if (_disposed) return AprsTransmitOutcome.unavailable;
+    return _transmitAprsMessage(
+      destination: pending.destination,
+      message: pending.message,
+      msgId: pending.msgId,
+      radioDeviceId: pending.radioDeviceId,
+      route: pending.route,
+    );
+  }
+
+  /// Tells the UI where a sent message stands, so a bubble can show the
+  /// remaining attempts and, in the end, a tick or a TX OUT.
+  void _publishDeliveryState(
+    AprsPendingMessage pending,
+    AprsDeliveryState state,
+  ) {
+    if (_disposed) return;
+    _broker.dispatch(
+      deviceId: _aprsDeviceId,
+      name: 'AprsMessageDelivery',
+      data: <String, Object?>{
+        'msgId': pending.msgId,
+        'destination': pending.destination,
+        'state': state.name,
+        'attemptsLeft': pending.attemptsLeft,
+      },
+      store: false,
+    );
+  }
+
+  /// Re-publishes where every pending message stands.
+  void _onRequestDeliveryStates(int deviceId, String name, Object? data) {
+    if (_disposed) return;
+    for (final pending in _retries.pending) {
+      _publishDeliveryState(pending, AprsDeliveryState.pending);
+    }
+  }
+
+  /// The user asking for a message to stop retrying (the radio's TX CLR).
+  void _onCancelAprsMessageRetry(int deviceId, String name, Object? data) {
+    if (_disposed) return;
+    final msgId = data is int ? data : int.tryParse('$data');
+    if (msgId == null) return;
+    _retries.cancel(msgId);
   }
 
   void _onPacketStoreReady(int deviceId, String name, Object? data) {
@@ -518,16 +646,35 @@ class AprsHandler {
       );
     }
 
+    _resolveRetryOnAck(aprsPacket, messageData);
     _sendAckIfNeeded(aprsPacket, ax25Packet, frame, deviceId);
     _notifyIncomingAprsMessage(aprsPacket);
+  }
+
+  /// Stops resending a message once the station we addressed acks or rejects
+  /// it. Done here rather than in the APRS tab so an ack still lands while the
+  /// tab is closed, or while another tab is on screen.
+  void _resolveRetryOnAck(AprsPacket aprsPacket, MessageData messageData) {
+    if (aprsPacket.dataType != PacketDataType.message) return;
+    final isAck = messageData.msgType == MessageType.mtAck;
+    final isRej = messageData.msgType == MessageType.mtRej;
+    if (!isAck && !isRej) return;
+
+    // Only an ack addressed to this station answers anything we sent.
+    final local = _localCallsignWithId;
+    final callsign = _broker.getValue<String>(0, 'CallSign', '') ?? '';
+    final addressee = messageData.addressee.trim();
+    if (addressee != local && addressee != callsign) return;
+
+    final msgId = int.tryParse(messageData.seqId.trim());
+    if (msgId == null) return;
+    _retries.resolve(msgId, aprsPacket.sourceCallsignWithId, rejected: isRej);
   }
 
   /// Raises a system notification when an APRS message addressed to our station
   /// arrives. [NotificationService] itself suppresses the pop-up while the app
   /// is in the foreground.
-  void _notifyIncomingAprsMessage(
-    AprsPacket aprsPacket,
-  ) {
+  void _notifyIncomingAprsMessage(AprsPacket aprsPacket) {
     // The desktop host raises the notification; on the hosted web build it would
     // be a duplicate of the host's own pop-up.
     if (HostBridge.isHosted) return;
@@ -719,6 +866,7 @@ class AprsHandler {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _retries.dispose();
     _broker.dispose();
     _aprsFrames.clear();
   }

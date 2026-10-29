@@ -5,12 +5,15 @@ http://www.apache.org/licenses/LICENSE-2.0
 */
 
 //
-// aprs_ota_dialog.dart - "APRS OTA: on the air now".
+// aprs_ota_dialog.dart - "APRS OTA".
 //
-// Lists the ops currently on the air (from aprsota.org) and lets the user
-// chase one by tapping it. Chasing sends `CHASE <callsign>` to the `OTA` bot
-// as an ordinary addressed APRS message, which the APRS tab then threads as a
-// normal conversation with OTA.
+// The one entry point for APRS OTA, with the activity's two sides as its tabs:
+//
+//  * "On the air" lists the ops running right now (from aprsota.org) and lets
+//    the user chase one by tapping it. Chasing sends `CHASE <callsign>` to the
+//    `OTA` bot as an ordinary addressed APRS message, which the APRS tab then
+//    threads as a normal conversation with OTA.
+//  * "Host an op" is [AprsOtaHostPanel], the console for an op of our own.
 //
 
 import 'package:flutter/material.dart';
@@ -23,6 +26,7 @@ import '../ota/ota_client.dart';
 import '../ota/ota_models.dart';
 import '../radio/repeaterbook_client.dart';
 import '../services/data_broker_client.dart';
+import 'aprs_ota_host_panel.dart';
 import 'dialog_utils.dart';
 
 /// What the user chose to do in the dialog.
@@ -33,22 +37,44 @@ class AprsOtaChaseRequest {
   const AprsOtaChaseRequest(this.callsign);
 }
 
-/// Shows the OTA ops list. Returns the op the user chose to chase, or null.
-Future<AprsOtaChaseRequest?> showAprsOtaDialog(BuildContext context) {
+/// Shows APRS OTA. Returns the op the user chose to chase, or null.
+///
+/// [onSendCommand] and [onRequestBeacon] belong to the host tab, which runs an
+/// op in place rather than returning a request: hosting is a conversation with
+/// the bot that outlives any one dialog.
+Future<AprsOtaChaseRequest?> showAprsOtaDialog(
+  BuildContext context, {
+  required Future<bool> Function(String message) onSendCommand,
+  required VoidCallback onRequestBeacon,
+  required bool transmitsOverRf,
+}) {
   return showDialog<AprsOtaChaseRequest>(
     context: context,
-    builder: (_) => const _AprsOtaDialog(),
+    builder: (_) => _AprsOtaDialog(
+      onSendCommand: onSendCommand,
+      onRequestBeacon: onRequestBeacon,
+      transmitsOverRf: transmitsOverRf,
+    ),
   );
 }
 
 class _AprsOtaDialog extends StatefulWidget {
-  const _AprsOtaDialog();
+  final Future<bool> Function(String message) onSendCommand;
+  final VoidCallback onRequestBeacon;
+  final bool transmitsOverRf;
+
+  const _AprsOtaDialog({
+    required this.onSendCommand,
+    required this.onRequestBeacon,
+    required this.transmitsOverRf,
+  });
 
   @override
   State<_AprsOtaDialog> createState() => _AprsOtaDialogState();
 }
 
-class _AprsOtaDialogState extends State<_AprsOtaDialog> {
+class _AprsOtaDialogState extends State<_AprsOtaDialog>
+    with SingleTickerProviderStateMixin {
   final DataBrokerClient _broker = DataBrokerClient();
   final OtaClient _client = OtaClient.instance;
   final TextEditingController _tokenController = TextEditingController();
@@ -59,9 +85,16 @@ class _AprsOtaDialogState extends State<_AprsOtaDialog> {
   List<OtaOp> _ops = const [];
   DateTime? _generatedAt;
 
+  late final TabController _tabs;
+
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 2, vsync: this);
+    // Refresh belongs to the ops list, so the action row follows the tabs.
+    _tabs.addListener(() {
+      if (mounted) setState(() {});
+    });
     _tokenController.text = _client.token ?? '';
     if (_client.hasToken) {
       _refresh();
@@ -72,6 +105,7 @@ class _AprsOtaDialogState extends State<_AprsOtaDialog> {
 
   @override
   void dispose() {
+    _tabs.dispose();
     _tokenController.dispose();
     super.dispose();
   }
@@ -172,12 +206,38 @@ class _AprsOtaDialogState extends State<_AprsOtaDialog> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return HTDialog(
-      title: l10n.otaTitle,
-      maxWidth: 560,
-      maxHeight: 620,
-      content: _buildBody(l10n),
+      title: l10n.otaDialogTitle,
+      maxWidth: 580,
+      maxHeight: 680,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TabBar(
+            controller: _tabs,
+            tabs: [
+              Tab(text: l10n.otaTabOnAir),
+              Tab(text: l10n.otaTabHost),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                _buildBody(l10n),
+                AprsOtaHostPanel(
+                  onSendCommand: widget.onSendCommand,
+                  onRequestBeacon: widget.onRequestBeacon,
+                  transmitsOverRf: widget.transmitsOverRf,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
       actions: [
-        if (_client.hasToken)
+        if (_client.hasToken && _tabs.index == 0)
           TextButton(
             // aprsota.org asks for no more than one poll a minute, so the
             // button waits out the interval rather than letting the user

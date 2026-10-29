@@ -765,6 +765,9 @@ class OtaHostSession extends ChangeNotifier {
     _points = (json['points'] as num?)?.toInt();
     _chasing = (json['chasing'] as num?)?.toInt();
 
+    // Replace rather than append: restoring on top of a list that already has
+    // entries would show every chaser twice.
+    _chasers.clear();
     final chasers = json['chasers'];
     if (chasers is List) {
       for (final item in chasers) {
