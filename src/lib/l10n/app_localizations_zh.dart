@@ -2684,7 +2684,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aprsSoftwareBeaconNoAprsChannel =>
-      'Beacon sent to the Internet only. No connected radio has a channel named \"APRS\" to transmit on.';
+      'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".';
 
   @override
   String get softwareBeaconSmartHint => '在间隔信标之间，当您移动较远距离或改变方向时发送额外的信标。';
@@ -3458,6 +3458,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get beaconChannelCurrent => '当前（不推荐）';
+
+  @override
+  String get beaconChannelAprsHint =>
+      'The app sends and receives APRS on this channel. Left on \"Current\", it uses a channel named \"APRS\" instead.';
 
   @override
   String beaconEverySeconds(int n) {

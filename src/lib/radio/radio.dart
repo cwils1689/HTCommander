@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 import '../services/data_broker_client.dart';
 import '../gps/gps_data.dart';
 import 'radio_models.dart';
+import '../aprs/aprs_channel.dart';
 import 'radio_transport.dart';
 import 'tnc_data_fragment.dart';
 import 'ax25_packet.dart';
@@ -1810,6 +1811,12 @@ class Radio implements FirmwareRadio {
 
   String _getChannelNameById(int channelId) {
     if (channelId >= 254) return 'NOAA';
+    // The APRS channel is named `APRS` to the rest of the app whatever it is
+    // called on the radio: that name is how every layer above here — the
+    // decoder, the handlers, the packet store — recognises APRS traffic.
+    if (channelId >= 0 && channelId == _aprsChannelId()) {
+      return AprsChannel.channelName;
+    }
     if (channels != null &&
         channels!.length > channelId &&
         channels![channelId] != null) {
@@ -2296,7 +2303,7 @@ class Radio implements FirmwareRadio {
     if (!audioOn) return '';
 
     final int aprsId = _aprsChannelId();
-    final bool isAprs = fragment.channelName == 'APRS' ||
+    final bool isAprs = fragment.channelName == AprsChannel.channelName ||
         (aprsId >= 0 && fragment.channelId == aprsId);
     if (isAprs) {
       final String aprsMode =
@@ -2320,14 +2327,21 @@ class Radio implements FirmwareRadio {
     return mode;
   }
 
-  /// The channel id of this radio's channel named 'APRS', or -1.
+  /// The channel id this radio carries APRS on, or -1.
+  ///
+  /// The radio's own "auto share location channel" wins when it is set, since
+  /// that is the channel the operator chose to report position on; otherwise
+  /// the channel named `APRS` decides, as it always has.
   int _aprsChannelId() {
     final list = channels;
     if (list == null) return -1;
-    for (final ch in list) {
-      if (ch != null && ch.name == 'APRS') return ch.channelId;
-    }
-    return -1;
+    return AprsChannel.resolve(
+      autoShareLocCh: settings?.autoShareLocCh ?? AprsChannel.currentChannel,
+      channels: [
+        for (final ch in list)
+          if (ch != null) (id: ch.channelId, name: ch.name),
+      ],
+    );
   }
 
   FragmentEncodingType _softwareEncodingFor(String mode) {
@@ -2376,6 +2390,11 @@ class Radio implements FirmwareRadio {
   }
 
   String _getFragmentChannelName(int channelId, String fallback) {
+    // As above, so a frame we sent and a frame we heard on the APRS channel
+    // are tagged alike.
+    if (channelId >= 0 && channelId == _aprsChannelId()) {
+      return AprsChannel.channelName;
+    }
     if (channels != null &&
         channelId >= 0 &&
         channelId < channels!.length &&

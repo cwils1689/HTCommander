@@ -5,7 +5,7 @@ for upstream.
 
 ## Bugs
 
-### 1. APRS beacon ignores the selected channel
+### 1. APRS beacon ignores the selected channel — DONE
 
 The channel used for APRS is found by matching the channel's **name** against
 the literal string `APRS`:
@@ -30,13 +30,34 @@ That lookup is duplicated in four files:
 - `lib/handlers/digipeater_handler.dart`
 - `lib/aprsis/aprsis_manager.dart`
 
-**Fix:** add a real per-radio APRS channel setting, collapse the four copies
-into one helper that prefers the setting and falls back to the name match so
-existing setups keep working, and add UI to choose it.
+**Fix:** no new setting was needed. The radio already has one: its "auto share
+location channel" (`RadioSettings.autoShareLocCh`), set in the radio's own menu
+and in HTCommander's beacon settings dialog, is the channel it reports position
+on. The app simply ignored it.
 
-Also affects APRS OTA (feature 4): every command to the `OTA` bot, chasing
-and hosting alike, goes out through the same lookup — and hosting is
-declined outright unless the command reaches the bot over RF.
+`lib/aprs/aprs_channel.dart` now answers "which channel is APRS" once: the
+radio's chosen channel when it names one that exists, otherwise the channel
+named `APRS`, exactly as before. The duplicated lookups in `aprs_handler`,
+`digipeater_handler`, `software_beacon_handler`, `aprsis_manager`,
+`software_modem` and the two "has an APRS channel" checks all call it.
+
+The name stays the marker everywhere else, which is what kept this small. The
+app routes APRS by the frame's channel *name* — the decoder, the handlers, the
+packet store and five SQL queries in `packets_dao.dart` all key off `APRS` —
+and every frame gets that name from two helpers in `radio.dart`. Those two now
+return `APRS` for whichever channel resolves above, so a channel called
+`DIGITAL` carries APRS through the whole app, history included, without a
+schema change. The channel keeps its real name on the radio.
+
+The resolution is covered by `test/aprs_channel_test.dart`.
+
+This also settles APRS OTA (feature 4) and the retry queue (feature 3): every
+command to the `OTA` bot and every retransmission goes out through the same
+lookup, so they follow the chosen channel too.
+
+Still open on this: the choice is per radio, made on the radio, so two radios
+cannot use differently-named channels unless each has its own setting — which
+they do, since `autoShareLocCh` is read per device.
 
 ### 2. Some messages do not appear when they repeat earlier text — FIXED
 

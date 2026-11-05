@@ -1695,7 +1695,7 @@
   "aprsSoftwareBeaconInactive": "Beacon not sent. The software beacon is turned off.",
   "aprsSoftwareBeaconTransmitDisabled": "Beacon sent to the Internet only. Transmitting is off — enable \"Allow this application to transmit\" in Settings.",
   "aprsSoftwareBeaconInternetOnly": "Beacon sent to the Internet only — no preferred radio is selected in the beacon settings.",
-  "aprsSoftwareBeaconNoAprsChannel": "Beacon sent to the Internet only. No connected radio has a channel named \"APRS\" to transmit on.",
+  "aprsSoftwareBeaconNoAprsChannel": "Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".",
   "softwareBeaconSmartHint": "Sends an extra beacon when you move a significant distance or change direction, between interval beacons.",
   "aprsDigipeaterMenu": "Digipeater...",
   "aprsStopResending": "Stop resending",
@@ -2007,6 +2007,7 @@
   "beaconAllowPositionCheck": "Allow Position Check",
   "beaconSmartBeacon": "Smart Beaconing",
   "beaconChannelCurrent": "Current (Not Recommended)",
+  "beaconChannelAprsHint": "The app sends and receives APRS on this channel. Left on \"Current\", it uses a channel named \"APRS\" instead.",
   "beaconEverySeconds": "Every {n} seconds",
   "@beaconEverySeconds": {
     "placeholders": {

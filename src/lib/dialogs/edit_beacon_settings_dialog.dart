@@ -522,6 +522,8 @@ class BeaconSettingsPanelState extends State<BeaconSettingsPanel>
     final l10n = AppLocalizations.of(context);
     return _labeled(
       l10n.packetsColChannel,
+      // This is the radio's "auto share location channel", and the app follows
+      // it for APRS as a whole, so say so where the choice is made.
       DropdownButtonFormField<int>(
         isExpanded: true,
         initialValue: _channelLabels.isEmpty ? null : _channelIndex,
@@ -544,6 +546,7 @@ class BeaconSettingsPanelState extends State<BeaconSettingsPanel>
               }
             : null,
       ),
+      helperText: l10n.beaconChannelAprsHint,
     );
   }
 
@@ -834,13 +837,23 @@ class BeaconSettingsPanelState extends State<BeaconSettingsPanel>
     );
   }
 
-  Widget _labeled(String label, Widget child) {
+  Widget _labeled(String label, Widget child, {String? helperText}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: DialogStyles.labelStyle),
         const SizedBox(height: 4),
         child,
+        if (helperText != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            helperText,
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ],
     );
   }

@@ -7,12 +7,12 @@ Ported from the C# `HTCommander.AprsHandler` class.
 */
 
 import '../aprs/aprs_auth.dart';
+import '../aprs/aprs_channel.dart';
 import '../aprs/aprs_conversation.dart';
 import '../aprs/aprs_events.dart';
 import '../aprs/aprs_packet.dart';
 import '../aprs/message_data.dart';
 import '../aprs/packet_data_type.dart';
-import '../models/radio_models.dart';
 import '../radio/ax25_address.dart';
 import '../radio/ax25_packet.dart';
 import '../radio/radio.dart';
@@ -240,16 +240,7 @@ class AprsHandler {
 
   /// Returns the channel id of the "APRS" channel for [radioDeviceId], or -1.
   int _getAprsChannelId(int radioDeviceId) {
-    final channels = _broker.getJsonListValue<RadioChannelInfo>(
-      radioDeviceId,
-      'Channels',
-      (json) => RadioChannelInfo.fromJson(json),
-    );
-    if (channels == null) return -1;
-    for (final channel in channels) {
-      if (channel.name == 'APRS') return channel.channelId;
-    }
-    return -1;
+    return AprsChannel.channelIdFor(radioDeviceId);
   }
 
   /// Whether [radioDeviceId] is locked in APRSSat mode (tracking an APRS

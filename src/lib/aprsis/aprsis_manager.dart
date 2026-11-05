@@ -48,6 +48,7 @@ import '../radio/ax25_packet.dart';
 import '../radio/radio.dart';
 import '../services/data_broker.dart';
 import '../services/data_broker_client.dart';
+import '../aprs/aprs_channel.dart';
 import 'aprsfi_client.dart';
 import 'aprsis_client.dart';
 import 'aprsis_history_store.dart';
@@ -1091,16 +1092,7 @@ class AprsIsManager {
   }
 
   int _aprsChannelId(int radioDeviceId) {
-    final channels = _broker.getJsonListValue<RadioChannelInfo>(
-      radioDeviceId,
-      'Channels',
-      (json) => RadioChannelInfo.fromJson(json),
-    );
-    if (channels == null) return -1;
-    for (final channel in channels) {
-      if (channel.name == 'APRS') return channel.channelId;
-    }
-    return -1;
+    return AprsChannel.channelIdFor(radioDeviceId);
   }
 
   // ---------------------------------------------------------------------------

@@ -39,6 +39,7 @@ import '../services/window_service.dart';
 import '../services/data_broker.dart';
 import '../services/data_broker_client.dart';
 import '../aprs/aprs_conversation.dart';
+import '../aprs/aprs_channel.dart';
 import '../aprs/aprs_events.dart';
 import '../aprs/aprs_packet.dart';
 import '../aprs/aprs_symbols.dart';
@@ -1607,20 +1608,10 @@ class _AprsTabState extends State<AprsTab>
   }
 
   bool _radioHasAprsChannel(int deviceId) {
-    final channels = _broker.getJsonListValue<RadioChannelInfo>(
-      deviceId,
-      'Channels',
-      (json) => RadioChannelInfo.fromJson(json),
-    );
-    if (channels == null) return false;
-    for (final channel in channels) {
-      // The APRS channel name must be all-caps "APRS" to match the routing used
-      // throughout the app (radio, modem, decoder, handlers all compare
-      // case-sensitively). A channel named e.g. "aprs" is a misconfiguration:
-      // it will not route any APRS traffic, so it must trigger the warning.
-      if (channel.name == 'APRS') return true;
-    }
-    return false;
+    // The radio's own location-share channel wins; failing that, a channel
+    // named "APRS" exactly, since the routing compares the name case
+    // sensitively and a channel named e.g. "aprs" carries nothing.
+    return AprsChannel.hasAprsChannel(deviceId);
   }
 
   void _recomputeChannelState() {

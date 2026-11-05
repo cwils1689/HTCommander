@@ -36,6 +36,7 @@ import '../hamlib/multi_modem.dart';
 import '../models/radio_models.dart';
 import '../services/data_broker.dart';
 import '../services/data_broker_client.dart';
+import '../aprs/aprs_channel.dart';
 import '../utils/num_parsing.dart';
 import 'modem_tx_encoder.dart';
 import 'radio_models.dart' as radio;
@@ -1109,16 +1110,7 @@ class SoftwareModem {
 
   /// Returns the channel id of the "APRS" channel for [deviceId], or -1.
   int _getAprsChannelId(int deviceId) {
-    final channels = _broker.getJsonListValue<RadioChannelInfo>(
-      deviceId,
-      'Channels',
-      (json) => RadioChannelInfo.fromJson(json),
-    );
-    if (channels == null) return -1;
-    for (final channel in channels) {
-      if (channel.name == 'APRS') return channel.channelId;
-    }
-    return -1;
+    return AprsChannel.channelIdFor(deviceId);
   }
 
   /// For a paired Audio Receive Device source ([state.followRadioChannel]),

@@ -2772,7 +2772,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get aprsSoftwareBeaconNoAprsChannel =>
-      'Beacon sent to the Internet only. No connected radio has a channel named \"APRS\" to transmit on.';
+      'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".';
 
   @override
   String get softwareBeaconSmartHint =>
@@ -3572,6 +3572,10 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get beaconChannelCurrent => 'Attuale (non consigliato)';
+
+  @override
+  String get beaconChannelAprsHint =>
+      'The app sends and receives APRS on this channel. Left on \"Current\", it uses a channel named \"APRS\" instead.';
 
   @override
   String beaconEverySeconds(int n) {

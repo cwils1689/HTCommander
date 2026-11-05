@@ -11,12 +11,12 @@ import '../aprs/aprs_events.dart';
 import '../aprs/aprs_packet.dart';
 import '../aprs/aprs_util.dart';
 import '../gps/gps_data.dart';
-import '../models/radio_models.dart';
 import '../radio/ax25_address.dart';
 import '../radio/ax25_packet.dart';
 import '../radio/radio.dart';
 import '../radio/utils.dart';
 import '../services/data_broker_client.dart';
+import '../aprs/aprs_channel.dart';
 import 'software_beacon_config.dart';
 
 /// Why a beacon was or was not transmitted. Reported on the
@@ -431,15 +431,6 @@ class SoftwareBeaconHandler {
 
   /// Returns the channel id of the "APRS" channel for [radioDeviceId], or -1.
   int _getAprsChannelId(int radioDeviceId) {
-    final channels = _broker.getJsonListValue<RadioChannelInfo>(
-      radioDeviceId,
-      'Channels',
-      (json) => RadioChannelInfo.fromJson(json),
-    );
-    if (channels == null) return -1;
-    for (final channel in channels) {
-      if (channel.name == 'APRS') return channel.channelId;
-    }
-    return -1;
+    return AprsChannel.channelIdFor(radioDeviceId);
   }
 }

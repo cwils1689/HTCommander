@@ -15,6 +15,7 @@ import '../handlers/digipeater_config.dart';
 import '../models/radio_models.dart';
 import '../radio/ax25_address.dart';
 import '../services/data_broker_client.dart';
+import '../aprs/aprs_channel.dart';
 import '../l10n/app_localizations.dart';
 import 'dialog_utils.dart';
 
@@ -147,13 +148,7 @@ class _DigipeaterDialogState extends State<DigipeaterDialog> {
 
   bool _radioHasAprsChannel(int deviceId) {
     if (deviceId <= 0) return false;
-    final channels = _broker.getJsonListValue<RadioChannelInfo>(
-      deviceId,
-      'Channels',
-      (json) => RadioChannelInfo.fromJson(json),
-    );
-    if (channels == null) return false;
-    return channels.any((c) => c.name == 'APRS');
+    return AprsChannel.hasAprsChannel(deviceId);
   }
 
   /// Whether [deviceId] is currently locked for the digipeater usage.

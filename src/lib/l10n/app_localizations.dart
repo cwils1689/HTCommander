@@ -5047,7 +5047,7 @@ abstract class AppLocalizations {
   /// No description provided for @aprsSoftwareBeaconNoAprsChannel.
   ///
   /// In en, this message translates to:
-  /// **'Beacon sent to the Internet only. No connected radio has a channel named \"APRS\" to transmit on.'**
+  /// **'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".'**
   String get aprsSoftwareBeaconNoAprsChannel;
 
   /// No description provided for @softwareBeaconSmartHint.
@@ -6321,6 +6321,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Current (Not Recommended)'**
   String get beaconChannelCurrent;
+
+  /// No description provided for @beaconChannelAprsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The app sends and receives APRS on this channel. Left on \"Current\", it uses a channel named \"APRS\" instead.'**
+  String get beaconChannelAprsHint;
 
   /// No description provided for @beaconEverySeconds.
   ///

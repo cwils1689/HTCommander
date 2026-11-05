@@ -6,13 +6,13 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 import 'dart:convert';
 
-import '../models/radio_models.dart';
 import '../radio/ax25_address.dart';
 import '../radio/ax25_packet.dart';
 import '../radio/radio.dart';
 import '../radio/tnc_data_fragment.dart';
 import '../services/data_broker.dart';
 import '../services/data_broker_client.dart';
+import '../aprs/aprs_channel.dart';
 import 'digipeater_config.dart';
 
 /// A data handler that acts as an APRS digipeater.
@@ -185,16 +185,7 @@ class DigipeaterHandler {
 
   /// Returns the channel id of the "APRS" channel for [radioDeviceId], or -1.
   int _getAprsChannelId(int radioDeviceId) {
-    final channels = _broker.getJsonListValue<RadioChannelInfo>(
-      radioDeviceId,
-      'Channels',
-      (json) => RadioChannelInfo.fromJson(json),
-    );
-    if (channels == null) return -1;
-    for (final channel in channels) {
-      if (channel.name == 'APRS') return channel.channelId;
-    }
-    return -1;
+    return AprsChannel.channelIdFor(radioDeviceId);
   }
 
   void _onUniqueDataFrame(int deviceId, String name, Object? data) {
