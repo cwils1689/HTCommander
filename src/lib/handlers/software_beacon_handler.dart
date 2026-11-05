@@ -11,6 +11,7 @@ import '../aprs/aprs_events.dart';
 import '../aprs/aprs_packet.dart';
 import '../aprs/aprs_util.dart';
 import '../gps/gps_data.dart';
+import '../models/radio_models.dart';
 import '../radio/ax25_address.dart';
 import '../radio/ax25_packet.dart';
 import '../radio/radio.dart';
@@ -381,7 +382,8 @@ class SoftwareBeaconHandler {
     return '>$message';
   }
 
-  /// Returns the current GPS/manual fix (device 1 `GpsData`) when valid.
+  /// Returns the current GPS/manual/phone fix (device 1 `GpsData`) when valid,
+  /// otherwise the built-in GPS position of a connected radio.
   ///
   /// Every publisher of that key dispatches a [GpsData] instance, not a JSON
   /// map, so reading it with `getJsonValue` always came back null and the
@@ -395,9 +397,37 @@ class SoftwareBeaconHandler {
     } else if (raw is Map) {
       gps = GpsData.fromJson(Map<String, dynamic>.from(raw));
     }
-    if (gps == null || !gps.isFixed) return null;
-    if (gps.latitude == 0 && gps.longitude == 0) return null;
-    return gps;
+    if (gps != null &&
+        gps.isFixed &&
+        !(gps.latitude == 0 && gps.longitude == 0)) {
+      return gps;
+    }
+    return _radioFix();
+  }
+
+  /// Locked GPS position reported by a connected radio (the preferred radio
+  /// first). Speed/heading are left at zero because the radio's units differ
+  /// from [GpsData]'s knots, so they must not drive SmartBeaconing.
+  GpsData? _radioFix() {
+    final ids = _connectedRadioIds();
+    final preferred = _config.radioDeviceId;
+    if (ids.remove(preferred)) ids.insert(0, preferred);
+    for (final id in ids) {
+      final raw = _broker.getValueDynamic(id, 'Position', null);
+      if (raw is! Map) continue;
+      final pos = RadioPosition.fromJson(Map<String, dynamic>.from(raw));
+      if (!pos.locked) continue;
+      if (pos.latitude == 0 && pos.longitude == 0) continue;
+      return GpsData(
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        altitude: pos.altitude,
+        fixQuality: 1,
+        isFixed: true,
+        gpsTime: pos.timestamp ?? DateTime.now().toUtc(),
+      );
+    }
+    return null;
   }
 
   int _resolveTxRadio() {

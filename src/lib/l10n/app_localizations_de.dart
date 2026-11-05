@@ -9,6 +9,27 @@ class AppLocalizationsDe extends AppLocalizations {
   AppLocalizationsDe([String locale = 'de']) : super(locale);
 
   @override
+  String get settingsCustomMapEnabled => 'Eigene Kartenquelle verwenden';
+
+  @override
+  String get settingsCustomMapUrl => 'URL der Kartenkacheln';
+
+  @override
+  String get settingsCustomMapAttribution => 'Quellenangabe (optional)';
+
+  @override
+  String get settingsCustomMapHelp =>
+      'Verwenden Sie eine Raster-XYZ-Kachel-URL in Web Mercator (PNG, JPEG oder WebP). Beachten Sie die Nutzungsbedingungen und Quellenangaben des Anbieters; laden Sie Offlinekarten nur herunter, wenn dies erlaubt ist. Im Web muss der Server CORS zulassen, und HTTPS-Seiten benötigen HTTPS-Kacheln. Eigene Kacheln behalten im Dunkelmodus ihre Originalfarben.';
+
+  @override
+  String get settingsCustomMapInvalid =>
+      'Geben Sie eine gültige HTTP/HTTPS-Raster-XYZ-URL mit allen drei Koordinatenplatzhaltern aus dem Beispiel ein. HTTPS-Seiten benötigen HTTPS-Kacheln.';
+
+  @override
+  String get mapDownloadFailed =>
+      'Kartendownload fehlgeschlagen. Einige Kacheln sind möglicherweise nicht gespeichert; prüfen Sie den Debug-Tab und versuchen Sie es erneut.';
+
+  @override
   String get appTitle => 'Handi-Talkie Commander';
 
   @override
@@ -30,7 +51,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get menuRadios => 'Funkgeräte';
 
   @override
-  String get menuDualWatch => 'Dual-Watch';
+  String get menuDualWatch => 'Zweikanalüberwachung';
 
   @override
   String get menuScan => 'Suchlauf';
@@ -247,7 +268,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get menuRadio => 'Funkgerät';
 
   @override
-  String get menuTabs => 'Tabs';
+  String get menuTabs => 'Registerkarten';
 
   @override
   String get menuTabNames => 'Tab-Namen';
@@ -358,6 +379,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get statusBluetoothNotAvailable => 'Bluetooth nicht verfügbar';
+
+  @override
+  String get statusBluetoothNotAuthorized =>
+      'Bluetooth-Berechtigung verweigert';
 
   @override
   String get statusScanningForRadios => 'Suche nach Funkgeräten...';
@@ -553,7 +578,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsTabMap => 'Karte';
 
   @override
-  String get settingsTabLimits => 'Limits';
+  String get settingsTabLimits => 'Grenzwerte';
 
   @override
   String get settingsTabApplication => 'Anwendung';
@@ -665,7 +690,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsAprsIsEnable => 'APRS-IS aktivieren';
 
   @override
-  String get settingsAprsIsPasscode => 'Passcode';
+  String get settingsAprsIsPasscode => 'Zugangscode';
 
   @override
   String settingsAprsIsPasscodeFor(String callSign) {
@@ -1082,6 +1107,52 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsEnableWebServer => 'Webserver aktivieren';
 
   @override
+  String get settingsEnableAgentApi =>
+      'Testagenten zulassen (Automatisierungs-API)';
+
+  @override
+  String agentControlActive(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Testagenten steuern diese Station',
+      one: 'Ein Testagent steuert diese Station',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String agentControlActiveRadios(int count, String radios) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Testagenten steuern diese Station',
+      one: 'Ein Testagent steuert diese Station',
+    );
+    return '$_temp0 - Funkgeräte: $radios';
+  }
+
+  @override
+  String get agentControlStop => 'Stoppen & deaktivieren';
+
+  @override
+  String get settingsAgentApiToken => 'Token:';
+
+  @override
+  String get settingsAgentApiCopyToken => 'Token kopieren';
+
+  @override
+  String get settingsAgentApiNewToken => 'Neues Token erzeugen';
+
+  @override
+  String get settingsAgentApiTokenCopied =>
+      'Agenten-Token in die Zwischenablage kopiert';
+
+  @override
+  String get settingsAgentApiWarning =>
+      'Clients mit diesem Token können die Paketaufzeichnung und Protokolle dieser Station lesen, Funkgeräte sperren, die BBS betreiben und XARA-Verbindungen herstellen, die Aussendungen auslösen. Solange ein Agent verbunden ist, wird ein Banner mit einer Stopp-Schaltfläche angezeigt. Teilen Sie das Token nur mit vertrauenswürdigen Tools und machen Sie den Webserver-Port niemals über das Internet zugänglich.';
+
+  @override
   String get settingsPort => 'Port:';
 
   @override
@@ -1300,6 +1371,10 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get connectBluetoothOffBody =>
       'Bluetooth ist nicht verfügbar oder deaktiviert.\n\nBitte aktivieren Sie Bluetooth in den Einstellungen Ihres Geräts und versuchen Sie es erneut.';
+
+  @override
+  String get connectBluetoothUnauthorizedBody =>
+      'HTCommander hat keine Berechtigung, Bluetooth zu verwenden.\n\n?ffnen Sie die Einstellungen, w?hlen Sie HTCommander aus, erlauben Sie den Bluetooth-Zugriff und versuchen Sie es erneut.';
 
   @override
   String get radioConnectionTitle => 'Funkgerät-Verbindung';
@@ -2138,6 +2213,29 @@ class AppLocalizationsDe extends AppLocalizations {
   String get terminalNotConnected => 'Nicht verbunden';
 
   @override
+  String get terminalBusy => 'Das Terminal wird bereits verwendet';
+
+  @override
+  String get terminalXaraRequiresAudio =>
+      'Aktivieren Sie das Funkgeräte-Audio, um XARA zu verwenden. XARA ist im Web und unter iOS nicht verfügbar.';
+
+  @override
+  String get terminalXaraNoAnswer =>
+      'Die XARA-Verbindung ist fehlgeschlagen oder hat das Zeitlimit überschritten.';
+
+  @override
+  String get terminalXaraLockTimeout =>
+      'Das Funkgerät konnte nicht gesperrt und auf den Terminalkanal eingestellt werden.';
+
+  @override
+  String get terminalXaraDisconnectTimeout =>
+      'Das Zeitlimit zum Trennen der XARA-Verbindung wurde überschritten; die Verbindung wurde abgebrochen.';
+
+  @override
+  String get terminalXaraPathInvalid =>
+      'Geben Sie bis zu zwei gültige Digipeater-Rufzeichen ein, durch Kommas getrennt.';
+
+  @override
   String terminalError(String error) {
     return 'Fehler: $error';
   }
@@ -2555,7 +2653,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get mapShowMeshCore => 'MeshCore-Stationen anzeigen';
 
   @override
-  String get meshTypeCompanion => 'Companion';
+  String get meshTypeCompanion => 'Begleitfunkgerät';
 
   @override
   String get meshTypeRepeater => 'Repeater';
@@ -2778,6 +2876,10 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get aprsSoftwareBeaconNoAprsChannel =>
       'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".';
+
+  @override
+  String get aprsSoftwareBeaconNoLocation =>
+      'Bake nicht gesendet. Es ist noch keine Standortbestimmung verfügbar. Legen Sie eine Standortquelle fest (manuell, Gerät, GPS oder Funkgerät-GPS) oder fügen Sie eine Baken-Nachricht hinzu.';
 
   @override
   String get softwareBeaconSmartHint =>
@@ -3272,8 +3374,21 @@ class AppLocalizationsDe extends AppLocalizations {
   String get commsSaveAsTitle => 'Speichern unter';
 
   @override
+  String get commsExportCsv => 'Als CSV speichern...';
+
+  @override
+  String get commsExportTxt => 'Als TXT speichern...';
+
+  @override
+  String get commsNoMessagesToSave => 'Es gibt keine Nachrichten zum Speichern';
+
+  @override
   String get commsTransmitDisabledAprs =>
       'Die Übertragung ist deaktiviert, wenn VFO A auf den APRS-Kanal eingestellt ist.';
+
+  @override
+  String get commsAprsSatelliteUseAprsTab =>
+      'Ein APRS-Satellit wird verfolgt. Verwenden Sie zum Senden den APRS-Tab.';
 
   @override
   String get commsWaitTransmission =>
@@ -3590,6 +3705,42 @@ class AppLocalizationsDe extends AppLocalizations {
   String beaconEveryMinutes(int n) {
     return 'Alle $n Minuten';
   }
+
+  @override
+  String get xaraSettingsTitle => 'XARA-Einstellungen';
+
+  @override
+  String get xaraSettingsKeyUp => 'Sendevorlauf (ms)';
+
+  @override
+  String get xaraSettingsKeyUpHelp =>
+      'Stille vor jedem Sendeburst, damit das Funkgerät auf Sendung gehen und die Rauschsperre der Gegenstation öffnen kann.';
+
+  @override
+  String get xaraSettingsLatency => 'Sendelatenz (ms)';
+
+  @override
+  String get xaraSettingsLatencyHelp =>
+      'Verzögerung von der Audioübergabe an das Funkgerät bis zum Empfang an der Gegenstation. Den Sendevorlauf nicht einrechnen; XARA addiert ihn automatisch. Eine zu geringe Latenz kann dazu führen, dass Antworten verpasst werden.';
+
+  @override
+  String xaraSettingsDefaultMs(int value) {
+    return 'Standard: $value ms. Bereich: 0-5000 ms.';
+  }
+
+  @override
+  String get xaraSettingsTimingInvalid =>
+      'Geben Sie eine ganze Zahl von 0 bis 5000 ein.';
+
+  @override
+  String get xaraSettingsLinkWarning =>
+      'Diese Einstellungen gelten für alle XARA-Funkgeräte. Das Speichern geänderter Zeitwerte trennt alle aktiven XARA-Verbindungen.';
+
+  @override
+  String get xaraSettingsRestoreDefaults => 'Standardwerte wiederherstellen';
+
+  @override
+  String get xaraSettingsSave => 'Speichern';
 
   @override
   String get assConnectTerminal => 'Mit Terminal-Station verbinden';
@@ -3926,7 +4077,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chScan => 'Suchlauf';
 
   @override
-  String get chTalkAround => 'Talk around';
+  String get chTalkAround => 'Direktbetrieb';
 
   @override
   String get chDeemphasis => 'Deemphasis';
@@ -3991,7 +4142,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get cdTxDisabled => 'Senden deaktiviert';
 
   @override
-  String get cdTalkAround => 'Talk around';
+  String get cdTalkAround => 'Direktbetrieb';
 
   @override
   String get cdEmpty => '(leer)';
@@ -4416,7 +4567,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get settingsWinlinkGatewayDbInfo =>
-      'Laden Sie eine kleine Offline-Liste von Winlink-Packet-Gateways herunter, um nahegelegene Stationen und ihre Frequenzen auf der Karte zu finden.';
+      'Laden Sie eine kleine Offline-Liste von Winlink-Packet- und VARA-FM-Gateways herunter, um nahegelegene Stationen und ihre Frequenzen auf der Karte zu finden.';
 
   @override
   String settingsWinlinkGatewayDbInstalled(String version, int count) {

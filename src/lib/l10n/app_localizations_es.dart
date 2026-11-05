@@ -9,6 +9,28 @@ class AppLocalizationsEs extends AppLocalizations {
   AppLocalizationsEs([String locale = 'es']) : super(locale);
 
   @override
+  String get settingsCustomMapEnabled =>
+      'Usar una fuente de mapas personalizada';
+
+  @override
+  String get settingsCustomMapUrl => 'URL de las teselas del mapa';
+
+  @override
+  String get settingsCustomMapAttribution => 'Atribución (opcional)';
+
+  @override
+  String get settingsCustomMapHelp =>
+      'Use una URL de teselas ráster XYZ en Web Mercator (PNG, JPEG o WebP). Respete la atribución y las condiciones del proveedor; descargue mapas sin conexión solo si está permitido. En la web, el servidor debe permitir CORS y las páginas HTTPS requieren teselas HTTPS. Las teselas personalizadas conservan sus colores originales en modo oscuro.';
+
+  @override
+  String get settingsCustomMapInvalid =>
+      'Introduzca una URL ráster XYZ HTTP/HTTPS válida con los tres marcadores de coordenadas del ejemplo. Las páginas HTTPS requieren teselas HTTPS.';
+
+  @override
+  String get mapDownloadFailed =>
+      'No se pudo descargar el mapa. Algunas teselas pueden no estar en la caché; consulte la pestaña Depuración e inténtelo de nuevo.';
+
+  @override
   String get appTitle => 'Handi-Talkie Commander';
 
   @override
@@ -357,6 +379,9 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get statusBluetoothNotAvailable => 'Bluetooth no disponible';
+
+  @override
+  String get statusBluetoothNotAuthorized => 'Permiso de Bluetooth denegado';
 
   @override
   String get statusScanningForRadios => 'Buscando radios...';
@@ -1078,6 +1103,52 @@ class AppLocalizationsEs extends AppLocalizations {
   String get settingsEnableWebServer => 'Habilitar el servidor web';
 
   @override
+  String get settingsEnableAgentApi =>
+      'Permitir agentes de prueba (API de automatización)';
+
+  @override
+  String agentControlActive(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count agentes de prueba están controlando esta estación',
+      one: 'Un agente de prueba está controlando esta estación',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String agentControlActiveRadios(int count, String radios) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count agentes de prueba están controlando esta estación',
+      one: 'Un agente de prueba está controlando esta estación',
+    );
+    return '$_temp0 - radios: $radios';
+  }
+
+  @override
+  String get agentControlStop => 'Detener y deshabilitar';
+
+  @override
+  String get settingsAgentApiToken => 'Token:';
+
+  @override
+  String get settingsAgentApiCopyToken => 'Copiar token';
+
+  @override
+  String get settingsAgentApiNewToken => 'Generar un nuevo token';
+
+  @override
+  String get settingsAgentApiTokenCopied =>
+      'Token del agente copiado al portapapeles';
+
+  @override
+  String get settingsAgentApiWarning =>
+      'Los clientes con este token pueden leer la captura de paquetes y los registros de esta estación, bloquear radios, ejecutar el BBS y establecer conexiones XARA que realizan transmisiones. Mientras un agente esté conectado, se muestra un aviso con un botón para detenerlo. Comparta el token solo con herramientas de confianza y nunca exponga el puerto del servidor web a Internet.';
+
+  @override
   String get settingsPort => 'Puerto:';
 
   @override
@@ -1291,6 +1362,10 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get connectBluetoothOffBody =>
       'El Bluetooth no está disponible o está desactivado.\n\nActive el Bluetooth en la configuración de su dispositivo e inténtelo de nuevo.';
+
+  @override
+  String get connectBluetoothUnauthorizedBody =>
+      'HTCommander no tiene permiso para usar el Bluetooth.\n\nAbra Ajustes, seleccione HTCommander, permita el acceso a Bluetooth e int?ntelo de nuevo.';
 
   @override
   String get radioConnectionTitle => 'Conexión de radio';
@@ -2130,6 +2205,29 @@ class AppLocalizationsEs extends AppLocalizations {
   String get terminalNotConnected => 'No conectado';
 
   @override
+  String get terminalBusy => 'El terminal ya está en uso';
+
+  @override
+  String get terminalXaraRequiresAudio =>
+      'Habilite el audio de la radio para usar XARA. XARA no está disponible en la web ni en iOS.';
+
+  @override
+  String get terminalXaraNoAnswer =>
+      'La conexión XARA falló o agotó el tiempo de espera.';
+
+  @override
+  String get terminalXaraLockTimeout =>
+      'No se pudo bloquear la radio y sintonizarla en el canal del terminal.';
+
+  @override
+  String get terminalXaraDisconnectTimeout =>
+      'Se agotó el tiempo de espera para desconectar XARA; se interrumpió el enlace.';
+
+  @override
+  String get terminalXaraPathInvalid =>
+      'Introduzca hasta dos indicativos de digipeater válidos, separados por comas.';
+
+  @override
   String terminalError(String error) {
     return 'Error: $error';
   }
@@ -2775,6 +2873,10 @@ class AppLocalizationsEs extends AppLocalizations {
       'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".';
 
   @override
+  String get aprsSoftwareBeaconNoLocation =>
+      'Baliza no enviada. Aún no hay una posición disponible. Configura una fuente de ubicación (manual, dispositivo, GPS o GPS de la radio) o añade un mensaje de baliza.';
+
+  @override
   String get softwareBeaconSmartHint =>
       'Envía una baliza adicional entre las balizas por intervalo cuando te mueves una distancia significativa o cambias de dirección.';
 
@@ -3267,8 +3369,21 @@ class AppLocalizationsEs extends AppLocalizations {
   String get commsSaveAsTitle => 'Guardar como';
 
   @override
+  String get commsExportCsv => 'Guardar como CSV...';
+
+  @override
+  String get commsExportTxt => 'Guardar como TXT...';
+
+  @override
+  String get commsNoMessagesToSave => 'No hay mensajes para guardar';
+
+  @override
   String get commsTransmitDisabledAprs =>
       'La transmisión está desactivada cuando el VFO A está ajustado al canal APRS.';
+
+  @override
+  String get commsAprsSatelliteUseAprsTab =>
+      'Siguiendo un satélite APRS. Use la pestaña APRS para transmitir.';
 
   @override
   String get commsWaitTransmission =>
@@ -3586,6 +3701,42 @@ class AppLocalizationsEs extends AppLocalizations {
   String beaconEveryMinutes(int n) {
     return 'Cada $n minutos';
   }
+
+  @override
+  String get xaraSettingsTitle => 'Configuración de XARA';
+
+  @override
+  String get xaraSettingsKeyUp => 'Silencio previo a la transmisión (ms)';
+
+  @override
+  String get xaraSettingsKeyUpHelp =>
+      'Silencio antes de cada ráfaga para que la radio pueda comenzar a transmitir y se abra el silenciador de la estación remota.';
+
+  @override
+  String get xaraSettingsLatency => 'Latencia de transmisión (ms)';
+
+  @override
+  String get xaraSettingsLatencyHelp =>
+      'Retardo desde que se entrega el audio a la radio hasta que la estación remota lo oye. No incluya el silencio previo a la transmisión; XARA lo añade automáticamente. Una latencia demasiado baja puede hacer que se pierdan respuestas.';
+
+  @override
+  String xaraSettingsDefaultMs(int value) {
+    return 'Predeterminado: $value ms. Rango: 0-5000 ms.';
+  }
+
+  @override
+  String get xaraSettingsTimingInvalid =>
+      'Introduzca un número entero entre 0 y 5000.';
+
+  @override
+  String get xaraSettingsLinkWarning =>
+      'Estos ajustes se aplican a todas las radios XARA. Al guardar cambios en los tiempos, se desconectan todos los enlaces XARA activos.';
+
+  @override
+  String get xaraSettingsRestoreDefaults => 'Restaurar valores predeterminados';
+
+  @override
+  String get xaraSettingsSave => 'Guardar';
 
   @override
   String get assConnectTerminal => 'Conectar a la estación Terminal';
@@ -3921,7 +4072,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get chScan => 'Escaneo';
 
   @override
-  String get chTalkAround => 'Talk around';
+  String get chTalkAround => 'Modo directo';
 
   @override
   String get chDeemphasis => 'Desénfasis';
@@ -3986,7 +4137,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get cdTxDisabled => 'Transmisión desactivada';
 
   @override
-  String get cdTalkAround => 'Talk around';
+  String get cdTalkAround => 'Modo directo';
 
   @override
   String get cdEmpty => '(vacío)';

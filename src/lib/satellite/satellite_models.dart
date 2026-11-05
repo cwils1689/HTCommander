@@ -234,6 +234,7 @@ class SatelliteTransponder {
 /// for birds like the ISS, an APRS digipeater, SSTV, and crew-voice channels.
 class SatelliteInfo {
   final SatelliteTle tle;
+  final bool isStatic;
 
   /// All amateur usages for this satellite. The primary workable FM repeater is
   /// first when present, so [transponder] resolves to it.
@@ -241,12 +242,14 @@ class SatelliteInfo {
 
   SatelliteInfo({
     required this.tle,
+    this.isStatic = false,
     SatelliteTransponder? transponder,
     List<SatelliteTransponder>? transponders,
-  }) : transponders = transponders ??
-            (transponder != null
-                ? <SatelliteTransponder>[transponder]
-                : const <SatelliteTransponder>[]);
+  }) : transponders =
+           transponders ??
+           (transponder != null
+               ? <SatelliteTransponder>[transponder]
+               : const <SatelliteTransponder>[]);
 
   int get noradId => tle.noradId;
   String get name => tle.name;
@@ -256,6 +259,7 @@ class SatelliteInfo {
 
   Map<String, dynamic> toJson() => {
     'tle': tle.toJson(),
+    'isStatic': isStatic,
     'transponders': transponders.map((t) => t.toJson()).toList(),
   };
 
@@ -277,6 +281,7 @@ class SatelliteInfo {
       );
     }
     return SatelliteInfo(
+      isStatic: json['isStatic'] == true,
       tle: SatelliteTle.fromJson(
         Map<String, dynamic>.from(json['tle'] as Map? ?? const {}),
       ),
@@ -287,12 +292,25 @@ class SatelliteInfo {
   /// Doppler-corrected downlink of the primary usage; see
   /// [SatelliteTransponder.correctedDownlinkHz].
   int? correctedDownlinkHz(double rangeRateKmS) =>
-      transponder.correctedDownlinkHz(rangeRateKmS);
+      transponder.correctedDownlinkHz(isStatic ? 0 : rangeRateKmS);
 
   /// Doppler-corrected uplink of the primary usage; see
   /// [SatelliteTransponder.correctedUplinkHz].
   int? correctedUplinkHz(double rangeRateKmS) =>
-      transponder.correctedUplinkHz(rangeRateKmS);
+      transponder.correctedUplinkHz(isStatic ? 0 : rangeRateKmS);
+
+  SatellitePosition staticPosition(DateTime utc) => SatellitePosition(
+    noradId: noradId,
+    name: name,
+    latitudeDeg: 0,
+    longitudeDeg: 0,
+    altitudeKm: 0,
+    azimuthDeg: 0,
+    elevationDeg: 90,
+    rangeKm: 0,
+    rangeRateKmS: 0,
+    utc: utc,
+  );
 }
 
 /// A live computed snapshot of a satellite as seen from the observer, produced
@@ -365,7 +383,7 @@ class SatellitePosition {
       elevationDeg: asDouble(json['elevationDeg']),
       rangeKm: asDouble(json['rangeKm']),
       rangeRateKmS: asDouble(json['rangeRateKmS']),
-      utc: DateTime.tryParse((json['utc'] as String?) ?? '')?.toUtc() ??
+        utc: DateTime.tryParse((json['utc'] as String?) ?? '')?.toUtc() ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
     );
   }
@@ -434,6 +452,10 @@ class SatellitePass {
 /// Doppler-corrected frequencies and look-angle each second; the radio turns
 /// this into the native SET_SATELLITE_INFO + FREQ_MODE_SET_PAR command pair.
 class SatelliteTrackParams {
+  /// Target identity, used to distinguish explicit target changes from Doppler drift.
+  final int? noradId;
+  final int usageIndex;
+
   /// Satellite name shown on the radio's own tracker screen.
   final String name;
 
@@ -462,7 +484,13 @@ class SatelliteTrackParams {
   /// countdown. 0 when unknown.
   final int secondsToNextPass;
 
+  /// While the bird is above the horizon, seconds until it sets (LOS);
+  /// 0 when not in a pass or unknown.
+  final int secondsToLos;
+
   const SatelliteTrackParams({
+    this.noradId,
+    this.usageIndex = 0,
     required this.name,
     required this.rxFreqHz,
     required this.txFreqHz,
@@ -472,5 +500,6 @@ class SatelliteTrackParams {
     required this.rangeKm,
     required this.altitudeKm,
     required this.secondsToNextPass,
+    this.secondsToLos = 0,
   });
 }

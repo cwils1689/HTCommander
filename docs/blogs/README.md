@@ -63,6 +63,21 @@ diagnosis and fix.
 
 ---
 
+## XARA Modem
+
+1. **[Bringing XARA Into HTCommander: A Direct Modem Integration Plan](xara-modem-integration-plan.md)**
+   A plan to port XARA's VARA-compatible modem entirely to Dart alongside DART,
+   without Rust/FFI or its TCP front end: reference-backed DSP and ARQ porting,
+   packet vs. connected-stream paths, and Bluetooth audio timing — now with a
+   progress report on the bit-exact FM physical layer and wire codecs.
+
+2. **[How XARA-FM Works: From Bytes to Radio Audio and Back](xara-fm-how-it-works.md)**
+   A step-by-step introduction to connection setup, framing, whitening, turbo
+   coding, OFDM, receive decoding, acknowledgments, and adaptive speed levels.
+   Explains how Winlink and AX.25 fit, and what remains to be tested on real radios.
+
+---
+
 ## Firmware Updates
 
 FIguring out the radio's firmware-update path — from
@@ -285,9 +300,11 @@ Working amateur radio satellites with a handheld — tracking, passes, and Doppl
    How HTCommander tracks the FM "easy sats" — SGP4 orbit propagation via the
    `satellite_observer` package, orbital elements from CelesTrak and transponder
    frequencies from SatNOGS (with a bundled offline seed), the tab and map ground
-   track/footprint overlay, Doppler-corrected up/downlink from range-rate — and
-   the honest ledger of what's left: driving the radio's own native
-   `SET_SATELLITE_INFO` command, whose payload isn't decoded yet.
+   track/footprint overlay, and Doppler-corrected up/downlink from range-rate.
+   Covers the decoded satellite display/tuning commands and the confirmed
+   reception caveat: `FREQ_MODE_SET_PAR` interrupts Bluetooth audio, while
+   `SET_SATELLITE_INFO` does not in the tested setup. Includes threshold-based
+   retuning and the optional hold-during-reception mitigation.
 
 2. **[Bring Your Own Birds: Editing, Importing and Exporting Satellite Data](editing-satellite-data.md)**
    Adding, editing and deleting satellites and their frequencies from the tab —
@@ -376,6 +393,23 @@ decisions that keep the radio responsive.
    HTCommander-hosted one, and the design rule that keeps them from fighting over
    the radio: the host does all the autonomous work while the browser only syncs,
    displays, and forwards the operator's own actions.
+
+3. **[Two Roads to a Remote Radio: The Web Bridge vs. the HTCommander-Remote Fork](remote-control-fork-review.md)**
+   A review of a community fork that lets one native HTCommander operate another
+   over WebSocket — token auth, single-operator lock, two-way audio with remote
+   PTT, and an audit trail — compared point by point with the existing web
+   bridge, plus a phased plan for hardening the web server and adding support
+   for remote HTCommanders.
+
+4. **[Two Radios, One Agent: Letting an AI Drive Real Over-the-Air Tests](ai-agent-radio-testing.md)**
+   How an AI agent could control two HTCommanders on different PCs over the
+   existing WebSocket bridge: what the bridge offers today, a proposed opt-in
+   `agent:` automation channel (decoded packet capture, logs, allowlisted
+   BBS/terminal/XARA commands, emergency stop), a lightweight two-station test
+   client with clock-corrected merged timelines, MCP tools for the agent, and
+   the safety rules for an interface that can make a radio transmit. Steps 1,
+   2 and 4 are implemented: observation, allowlisted control with an operator
+   Stop button, and the `src/tools/htc_agent` MCP server.
 
 ---
 

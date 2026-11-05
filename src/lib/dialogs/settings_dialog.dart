@@ -19,6 +19,7 @@ import '../allstar/allstar_portal_service.dart';
 import '../allstar/iax2_constants.dart' show iax2DefaultPort;
 import '../aprsis/aprsfi_client.dart';
 import '../echolink/echolink_credential_test.dart';
+import '../handlers/agent_api.dart';
 import '../handlers/location_handler.dart';
 import '../radio/repeaterbook_client.dart';
 import '../services/serial/serial_port.dart';
@@ -31,6 +32,7 @@ import '../services/tts_service.dart';
 import '../services/winlink_gateway_service.dart';
 import '../services/sherpa_model_manager.dart';
 import '../widgets/contact_avatar.dart';
+import '../utils/map_tile_source.dart';
 import 'app_settings.dart';
 import 'aprs_route_dialog.dart';
 import 'contact_logo_picker_dialog.dart';
@@ -101,6 +103,9 @@ class _SettingsDialogState extends State<SettingsDialog>
   late TextEditingController _webPortController;
   late TextEditingController _agwpePortController;
   late TextEditingController _airplaneUrlController;
+  late TextEditingController _customMapUrlController;
+  late TextEditingController _customMapAttributionController;
+  bool _customMapUrlInvalid = false;
   late TextEditingController _homeAssistantUrlController;
   late TextEditingController _homeAssistantUsernameController;
   late TextEditingController _homeAssistantPasswordController;
@@ -163,7 +168,8 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   /// Settings tabs in display order. On the web the radio is used over the BLE
   /// control channel only, so the audio-centric "Comms" tab and the
-  /// internet-service "Servers" / "Map" tabs are hidden. On Android/iOS the
+  /// internet-service "Servers" tab is hidden; "Map" shows only custom tiles.
+  /// On Android/iOS the
   /// "Servers" tab is hidden. All tabs remain visible on desktop platforms.
   List<String> get _visibleTabs {
     const all = [
@@ -184,7 +190,6 @@ class _SettingsDialogState extends State<SettingsDialog>
             (t) =>
                 t != 'Comms' &&
                 t != 'Servers' &&
-                t != 'Map' &&
                 t != 'EchoLink' &&
                 t != 'AllStar',
           )
@@ -345,6 +350,12 @@ class _SettingsDialogState extends State<SettingsDialog>
     _airplaneUrlController = TextEditingController(
       text: _settings.airplaneServerUrl,
     );
+    _customMapUrlController = TextEditingController(
+      text: _settings.customMapSourceUrl,
+    );
+    _customMapAttributionController = TextEditingController(
+      text: _settings.customMapSourceAttribution,
+    );
     _homeAssistantUrlController = TextEditingController(
       text: _settings.homeAssistantMqttUrl,
     );
@@ -426,6 +437,8 @@ class _SettingsDialogState extends State<SettingsDialog>
     _webPortController.dispose();
     _agwpePortController.dispose();
     _airplaneUrlController.dispose();
+    _customMapUrlController.dispose();
+    _customMapAttributionController.dispose();
     _homeAssistantUrlController.dispose();
     _homeAssistantUsernameController.dispose();
     _homeAssistantPasswordController.dispose();
@@ -910,6 +923,18 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   void _onSave() async {
     final l10n = AppLocalizations.of(context);
+    if (_settings.customMapSourceEnabled &&
+        !MapTileSource.isValidUrl(
+          _customMapUrlController.text,
+          requireHttps: kIsWeb && Uri.base.scheme == 'https',
+        )) {
+      setState(() => _customMapUrlInvalid = true);
+      _tabController.animateTo(_visibleTabs.indexOf('Map'));
+      return;
+    }
+    _settings.customMapSourceUrl = _customMapUrlController.text.trim();
+    _settings.customMapSourceAttribution = _customMapAttributionController.text
+        .trim();
     // Update settings from text controllers
     _settings.winlinkPassword = _winlinkPasswordController.text;
     // Blank means "keep the current password" so the pre-blanked field never
@@ -3725,6 +3750,92 @@ class _SettingsDialogState extends State<SettingsDialog>
     );
   }
 
+  /// Agent API (automation) controls, shown under the web server: an enable
+  /// checkbox, the access token with copy / regenerate, and a warning.
+  Widget _buildAgentApiSettings(AppLocalizations l10n) {
+    final bool webOn = _settings.webServerEnabled;
+    void setEnabled(bool on) => setState(() {
+      _settings.agentApiEnabled = on;
+      if (on && _settings.agentApiToken.isEmpty) {
+        _settings.agentApiToken = AgentApi.generateToken();
+      }
+    });
+    return Padding(
+      padding: const EdgeInsets.only(left: 36, top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Checkbox(
+                value: _settings.agentApiEnabled,
+                onChanged: webOn ? (v) => setEnabled(v ?? false) : null,
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: webOn
+                      ? () => setEnabled(!_settings.agentApiEnabled)
+                      : null,
+                  child: Text(l10n.settingsEnableAgentApi),
+                ),
+              ),
+            ],
+          ),
+          if (_settings.agentApiEnabled) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Row(
+                children: [
+                  Text(
+                    l10n.settingsAgentApiToken,
+                    style: DialogStyles.labelStyle,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SelectableText(
+                      _settings.agentApiToken,
+                      style: const TextStyle(fontFamily: 'monospace'),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: l10n.settingsAgentApiCopyToken,
+                    icon: const Icon(Icons.copy, size: 18),
+                    onPressed: () {
+                      Clipboard.setData(
+                        ClipboardData(text: _settings.agentApiToken),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(l10n.settingsAgentApiTokenCopied),
+                        ),
+                      );
+                    },
+                  ),
+                  IconButton(
+                    tooltip: l10n.settingsAgentApiNewToken,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    onPressed: () => setState(
+                      () => _settings.agentApiToken = AgentApi.generateToken(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 12, top: 4),
+              child: Text(
+                l10n.settingsAgentApiWarning,
+                style: DialogStyles.bodyStyle.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildServersTab() {
     final l10n = AppLocalizations.of(context);
     return SingleChildScrollView(
@@ -3782,6 +3893,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                     ],
                   ),
                 ),
+                _buildAgentApiSettings(l10n),
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 16),
@@ -3998,183 +4110,250 @@ class _SettingsDialogState extends State<SettingsDialog>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(mapIntro, style: DialogStyles.bodyStyle),
-          const SizedBox(height: 16),
-          if (_serialGpsSupported) ...[
-            // GPS Settings
+          if (!kIsWeb) ...[
+            Text(mapIntro, style: DialogStyles.bodyStyle),
+            const SizedBox(height: 16),
+            if (_serialGpsSupported) ...[
+              // GPS Settings
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: _sectionDecoration(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.settingsGpsSerialPort,
+                      style: _sectionTitleStyle(),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 13,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                l10n.settingsSerialPort,
+                                style: DialogStyles.labelStyle,
+                              ),
+                              const SizedBox(height: 4),
+                              DropdownButtonFormField<String>(
+                                initialValue: _settings.gpsSerialPort,
+                                isExpanded: true,
+                                decoration: _inputDecoration(),
+                                items: _gpsPortItems(),
+                                onChanged: (value) {
+                                  setState(
+                                    () => _settings.gpsSerialPort =
+                                        value ?? 'None',
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          flex: 7,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                l10n.settingsBaudRate,
+                                style: DialogStyles.labelStyle,
+                              ),
+                              const SizedBox(height: 4),
+                              DropdownButtonFormField<int>(
+                                initialValue: _settings.gpsBaudRate,
+                                decoration: _inputDecoration(),
+                                items: _baudRates
+                                    .map(
+                                      (b) => DropdownMenuItem(
+                                        value: b,
+                                        child: Text(b.toString()),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  setState(
+                                    () => _settings.gpsBaudRate = value ?? 4800,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Checkbox(
+                          value: _settings.shareSerialGpsLocation,
+                          onChanged: (value) {
+                            setState(
+                              () => _settings.shareSerialGpsLocation =
+                                  value ?? false,
+                            );
+                          },
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(
+                              () => _settings.shareSerialGpsLocation =
+                                  !_settings.shareSerialGpsLocation,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 12),
+                                Text(l10n.settingsShareGpsLocation),
+                                const SizedBox(height: 2),
+                                Text(
+                                  l10n.settingsShareGpsLocationHelp,
+                                  style: _secondaryStyle(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ],
+          if (!kIsWeb)
+            // Airplane Tracking
             Container(
               padding: const EdgeInsets.all(16),
               decoration: _sectionDecoration(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(l10n.settingsGpsSerialPort, style: _sectionTitleStyle()),
+                  Text(
+                    l10n.settingsAirplaneTracking,
+                    style: _sectionTitleStyle(),
+                  ),
                   const SizedBox(height: 16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 13,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              l10n.settingsSerialPort,
-                              style: DialogStyles.labelStyle,
-                            ),
-                            const SizedBox(height: 4),
-                            DropdownButtonFormField<String>(
-                              initialValue: _settings.gpsSerialPort,
-                              isExpanded: true,
-                              decoration: _inputDecoration(),
-                              items: _gpsPortItems(),
-                              onChanged: (value) {
-                                setState(
-                                  () =>
-                                      _settings.gpsSerialPort = value ?? 'None',
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        flex: 7,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              l10n.settingsBaudRate,
-                              style: DialogStyles.labelStyle,
-                            ),
-                            const SizedBox(height: 4),
-                            DropdownButtonFormField<int>(
-                              initialValue: _settings.gpsBaudRate,
-                              decoration: _inputDecoration(),
-                              items: _baudRates
-                                  .map(
-                                    (b) => DropdownMenuItem(
-                                      value: b,
-                                      child: Text(b.toString()),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) {
-                                setState(
-                                  () => _settings.gpsBaudRate = value ?? 4800,
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  Text(l10n.settingsServerUrl, style: DialogStyles.labelStyle),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _airplaneUrlController,
+                    onChanged: (_) {
+                      // Clear the previous result when the URL changes, matching
+                      // the C# dump1090urlTextBox_TextChanged behavior.
+                      setState(() => _airplaneTestResult = '');
+                    },
+                    decoration: _inputDecoration(
+                      hintText: 'http://localhost:8080/data/aircraft.json',
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Checkbox(
-                        value: _settings.shareSerialGpsLocation,
-                        onChanged: (value) {
-                          setState(
-                            () => _settings.shareSerialGpsLocation =
-                                value ?? false,
-                          );
-                        },
-                      ),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(
-                            () => _settings.shareSerialGpsLocation =
-                                !_settings.shareSerialGpsLocation,
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final narrow = constraints.maxWidth < 360;
+                      return Row(
+                        children: [
+                          ElevatedButton(
+                            onPressed:
+                                (_airplaneUrlController.text
+                                        .trim()
+                                        .isNotEmpty &&
+                                    !_airplaneTesting)
+                                ? _testAirplaneConnection
+                                : null,
+                            child: Text(
+                              narrow
+                                  ? l10n.settingsTest
+                                  : l10n.settingsTestConnection,
+                            ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 12),
-                              Text(l10n.settingsShareGpsLocation),
-                              const SizedBox(height: 2),
-                              Text(
-                                l10n.settingsShareGpsLocationHelp,
-                                style: _secondaryStyle(),
+                          if (_airplaneTestResult.isNotEmpty) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _airplaneTestResult,
+                                style: TextStyle(
+                                  color: _airplaneTesting
+                                      ? Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant
+                                      : (_airplaneTestOk
+                                            ? Colors.green.shade700
+                                            : Colors.red.shade700),
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+                            ),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-          ],
-          // Airplane Tracking
+          if (!kIsWeb) const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: _sectionDecoration(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  l10n.settingsAirplaneTracking,
-                  style: _sectionTitleStyle(),
-                ),
-                const SizedBox(height: 16),
-                Text(l10n.settingsServerUrl, style: DialogStyles.labelStyle),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: _airplaneUrlController,
-                  onChanged: (_) {
-                    // Clear the previous result when the URL changes, matching
-                    // the C# dump1090urlTextBox_TextChanged behavior.
-                    setState(() => _airplaneTestResult = '');
-                  },
-                  decoration: _inputDecoration(
-                    hintText: 'http://localhost:8080/data/aircraft.json',
+                Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l10n.settingsCustomMapEnabled),
+                    value: _settings.customMapSourceEnabled,
+                    onChanged: (value) => setState(() {
+                      _settings.customMapSourceEnabled = value;
+                      _customMapUrlInvalid = false;
+                    }),
                   ),
                 ),
-                const SizedBox(height: 8),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final narrow = constraints.maxWidth < 360;
-                    return Row(
-                      children: [
-                        ElevatedButton(
-                          onPressed:
-                              (_airplaneUrlController.text.trim().isNotEmpty &&
-                                  !_airplaneTesting)
-                              ? _testAirplaneConnection
+                if (_settings.customMapSourceEnabled) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.settingsCustomMapUrl,
+                    style: DialogStyles.labelStyle,
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    key: const ValueKey('customMapUrl'),
+                    controller: _customMapUrlController,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    onChanged: (_) =>
+                        setState(() => _customMapUrlInvalid = false),
+                    decoration:
+                        _inputDecoration(
+                          hintText: 'https://example.com/{z}/{x}/{y}.png',
+                        ).copyWith(
+                          errorText: _customMapUrlInvalid
+                              ? l10n.settingsCustomMapInvalid
                               : null,
-                          child: Text(
-                            narrow
-                                ? l10n.settingsTest
-                                : l10n.settingsTestConnection,
-                          ),
                         ),
-                        if (_airplaneTestResult.isNotEmpty) ...[
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _airplaneTestResult,
-                              style: TextStyle(
-                                color: _airplaneTesting
-                                    ? Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant
-                                    : (_airplaneTestOk
-                                          ? Colors.green.shade700
-                                          : Colors.red.shade700),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    );
-                  },
-                ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(l10n.settingsCustomMapHelp, style: _secondaryStyle()),
+                  const SizedBox(height: 16),
+                  Text(
+                    l10n.settingsCustomMapAttribution,
+                    style: DialogStyles.labelStyle,
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    key: const ValueKey('customMapAttribution'),
+                    controller: _customMapAttributionController,
+                    decoration: _inputDecoration(),
+                  ),
+                ],
               ],
             ),
           ),

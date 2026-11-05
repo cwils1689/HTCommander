@@ -1,4 +1,10 @@
 {
+  "settingsCustomMapEnabled": "Use custom map source",
+  "settingsCustomMapUrl": "Map tile URL",
+  "settingsCustomMapAttribution": "Attribution (optional)",
+  "settingsCustomMapHelp": "Use a raster XYZ tile URL in Web Mercator (PNG, JPEG or WebP). Follow the provider's attribution and usage terms; download offline maps only if permitted. On web, the server must allow CORS and HTTPS pages require HTTPS tiles. Custom tiles keep their original colors in dark mode.",
+  "settingsCustomMapInvalid": "Enter a valid HTTP/HTTPS raster XYZ URL containing all three coordinate placeholders shown in the example. HTTPS web pages require HTTPS tiles.",
+  "mapDownloadFailed": "Map download failed. Some tiles may not be cached; check the Debug tab and try again.",
   "@@locale": "en",
 
   "appTitle": "Handi-Talkie Commander",
@@ -414,6 +420,7 @@
     "description": "Status message shown while verifying Bluetooth availability."
   },
   "statusBluetoothNotAvailable": "Bluetooth not available",
+  "statusBluetoothNotAuthorized": "Bluetooth permission denied",
   "@statusBluetoothNotAvailable": {
     "description": "Status message when Bluetooth is unavailable."
   },
@@ -798,6 +805,26 @@
   "settingsServersIntro": "Configure local server settings.",
   "settingsLocalServers": "Local Servers",
   "settingsEnableWebServer": "Enable Web Server",
+  "settingsEnableAgentApi": "Allow test agents (automation API)",
+  "agentControlActive": "{count, plural, one{A test agent is controlling this station} other{{count} test agents are controlling this station}}",
+  "@agentControlActive": {
+    "placeholders": {
+      "count": { "type": "int", "example": "1" }
+    }
+  },
+  "agentControlActiveRadios": "{count, plural, one{A test agent is controlling this station} other{{count} test agents are controlling this station}} - radios: {radios}",
+  "@agentControlActiveRadios": {
+    "placeholders": {
+      "count": { "type": "int", "example": "1" },
+      "radios": { "type": "String", "example": "101" }
+    }
+  },
+  "agentControlStop": "Stop & disable",
+  "settingsAgentApiToken": "Token:",
+  "settingsAgentApiCopyToken": "Copy token",
+  "settingsAgentApiNewToken": "Generate a new token",
+  "settingsAgentApiTokenCopied": "Agent token copied to clipboard",
+  "settingsAgentApiWarning": "Clients with this token can read this station's packet capture and logs, and can lock radios, run the BBS and make XARA connections, which transmit. A banner with a Stop button is shown while an agent is connected. Share the token only with tools you trust, and never expose the web server port to the internet.",
   "settingsPort": "Port:",
   "settingsEnableAgwpeServer": "Enable AGWPE Server",
 
@@ -967,6 +994,7 @@
   "connectAllConnectedBody": "All detected radio devices are already connected.",
   "connectBluetoothOffTitle": "Bluetooth Not Available",
   "connectBluetoothOffBody": "Bluetooth is not available or is turned off.\n\nPlease enable Bluetooth in your device settings and try again.",
+  "connectBluetoothUnauthorizedBody": "HTCommander does not have permission to use Bluetooth.\n\nOpen Settings, select HTCommander and allow Bluetooth access, then try again.",
 
   "radioConnectionTitle": "Radio Connection",
   "radioConnectionEmpty": "No compatible radios found.\nMake sure your radio is powered on and Bluetooth is enabled.",
@@ -1414,6 +1442,12 @@
   "terminalInvalidCallsignDest": "Invalid callsign/destination",
   "terminalInvalidCallsign": "Invalid callsign",
   "terminalNotConnected": "Not connected",
+  "terminalBusy": "The terminal is already in use",
+  "terminalXaraRequiresAudio": "Enable the radio audio to use XARA. XARA is not available on web or iOS.",
+  "terminalXaraNoAnswer": "The XARA connection failed or timed out.",
+  "terminalXaraLockTimeout": "Could not lock and tune the radio to the terminal channel.",
+  "terminalXaraDisconnectTimeout": "The XARA disconnect timed out; the link was aborted.",
+  "terminalXaraPathInvalid": "Enter up to two valid digipeater callsigns, separated by commas.",
   "terminalError": "Error: {error}",
   "@terminalError": {
     "placeholders": {
@@ -1696,6 +1730,7 @@
   "aprsSoftwareBeaconTransmitDisabled": "Beacon sent to the Internet only. Transmitting is off — enable \"Allow this application to transmit\" in Settings.",
   "aprsSoftwareBeaconInternetOnly": "Beacon sent to the Internet only — no preferred radio is selected in the beacon settings.",
   "aprsSoftwareBeaconNoAprsChannel": "Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".",
+  "aprsSoftwareBeaconNoLocation": "Beacon not sent. No location fix is available yet. Set a location source (manual, device, GPS or radio GPS) or add a beacon message.",
   "softwareBeaconSmartHint": "Sends an extra beacon when you move a significant distance or change direction, between interval beacons.",
   "aprsDigipeaterMenu": "Digipeater...",
   "aprsStopResending": "Stop resending",
@@ -1878,7 +1913,11 @@
   "commsRecordingWebUnavailable": "Recording playback from files is unavailable on web.",
   "commsFileNoLongerExists": "The file no longer exists.",
   "commsSaveAsTitle": "Save As",
+  "commsExportCsv": "Save as CSV...",
+  "commsExportTxt": "Save as TXT...",
+  "commsNoMessagesToSave": "There are no messages to save",
   "commsTransmitDisabledAprs": "Transmit is disabled while VFO A is set to the APRS channel.",
+  "commsAprsSatelliteUseAprsTab": "Tracking an APRS satellite. Use the APRS tab to transmit.",
   "commsWaitTransmission": "Please wait for the current transmission to finish.",
   "commsConnectRadioChat": "Connect a radio before sending a chat message.",
   "commsEnableAudioMode": "Enable audio (the Enable button) before sending in this mode.",
@@ -2020,6 +2059,22 @@
       "n": { "type": "int", "example": "5" }
     }
   },
+
+  "xaraSettingsTitle": "XARA Settings",
+  "xaraSettingsKeyUp": "Key-up pre-roll (ms)",
+  "xaraSettingsKeyUpHelp": "Silence before each burst so the radio can key up and the remote squelch can open.",
+  "xaraSettingsLatency": "Transmit latency (ms)",
+  "xaraSettingsLatencyHelp": "Delay from handing audio to the radio until the remote station hears it. Do not include the key-up pre-roll; XARA adds it automatically. Too little latency can cause missed replies.",
+  "xaraSettingsDefaultMs": "Default: {value} ms. Range: 0-5000 ms.",
+  "@xaraSettingsDefaultMs": {
+    "placeholders": {
+      "value": { "type": "int", "example": "300" }
+    }
+  },
+  "xaraSettingsTimingInvalid": "Enter a whole number from 0 to 5000.",
+  "xaraSettingsLinkWarning": "These settings apply to all XARA radios. Saving changed timings disconnects any active XARA links.",
+  "xaraSettingsRestoreDefaults": "Restore Defaults",
+  "xaraSettingsSave": "Save",
 
   "assConnectTerminal": "Connect to Terminal Station",
   "assConnectBbs": "Connect to BBS Station",
@@ -2448,7 +2503,7 @@
   },
   "cslAutoUpdateWifiSubtitle": "Keep installed databases up to date automatically, only over Wi-Fi or wired connections to avoid mobile data charges.",
   "settingsWinlinkGatewayDbTitle": "Offline Gateway Directory",
-  "settingsWinlinkGatewayDbInfo": "Download a small offline list of Winlink packet gateways to find nearby stations and their frequencies on the map.",
+  "settingsWinlinkGatewayDbInfo": "Download a small offline list of Winlink packet and VARA-FM gateways to find nearby stations, frequencies and supported modes on the map.",
   "settingsWinlinkGatewayDbInstalled": "Installed: {version} ({count} gateways)",
   "@settingsWinlinkGatewayDbInstalled": {
     "description": "Installed Winlink gateway directory version and gateway count",

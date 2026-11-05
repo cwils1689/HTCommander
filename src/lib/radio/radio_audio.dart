@@ -133,6 +133,11 @@ class RadioAudio {
       name: 'CancelVoiceTransmit',
       callback: _onCancelVoiceTransmit,
     );
+    _broker.subscribe(
+      deviceId: deviceId,
+      name: 'CancelDataTransmit',
+      callback: _onCancelVoiceTransmit,
+    );
     // Track radio status so the engine can tag audio with the current channel
     // and honor the muted-channel state without reaching into [radio].
     _broker.subscribe(
@@ -438,6 +443,7 @@ class RadioAudio {
     bool playLocally = false;
     bool? hold;
     bool isDataFrame = false;
+    bool isBulkData = false;
     if (data is Uint8List) {
       pcm = data;
     } else if (data is List<int>) {
@@ -455,6 +461,8 @@ class RadioAudio {
       if (h is bool) hold = h;
       final Object? df = data['isDataFrame'] ?? data['IsDataFrame'];
       if (df is bool) isDataFrame = df;
+      final Object? bd = data['isBulkData'] ?? data['IsBulkData'];
+      if (bd is bool) isBulkData = bd;
     }
 
     if (pcm == null || pcm.isEmpty) {
@@ -471,6 +479,7 @@ class RadioAudio {
       'playLocally': playLocally,
       'hold': hold,
       'isDataFrame': isDataFrame,
+      'isBulkData': isBulkData,
     });
   }
 

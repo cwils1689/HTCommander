@@ -41,6 +41,8 @@ import '../utils/num_parsing.dart';
 import 'modem_tx_encoder.dart';
 import 'radio_models.dart' as radio;
 import 'tnc_data_fragment.dart';
+import 'xara_capture.dart';
+import 'xara_modem.dart';
 
 /// Software modem mode types.
 enum SoftwareModemMode {
@@ -48,6 +50,7 @@ enum SoftwareModemMode {
   afsk1200,
   psk2400,
   dart,
+  xara,
 }
 
 /// Holds a frame waiting to be transmitted once the channel is clear. The
@@ -103,6 +106,7 @@ class _RadioModemState {
   /// radio's hardware TNC (software modem off for this radio); any other value
   /// forces that software mode regardless of the global setting.
   SoftwareModemMode? lockModemOverride;
+  bool? lockXaraWide;
 
   /// The user's general software modem (null when the general modem is off).
   _ModemInstance? generalModem;
@@ -115,6 +119,13 @@ class _RadioModemState {
   final List<_PendingTransmission> transmitQueue = [];
   bool waitingForChannel = false;
   bool channelIsClear = false;
+
+  /// An already-modulated bundle held back because the radio started receiving
+  /// while it was being encoded; sent as soon as the channel is clear again.
+  Uint8List? heldPcm;
+  DateTime? heldPcmDeadline;
+
+  bool get hasPendingTx => transmitQueue.isNotEmpty || heldPcm != null;
 
   /// True while a bundled transmission is being modulated off-isolate. Prevents
   /// a concurrent channel-access slot from starting a second overlapping keyup
@@ -131,6 +142,8 @@ class _RadioModemState {
     channelWaitTimer?.cancel();
     channelWaitTimer = null;
     transmitQueue.clear();
+    heldPcm = null;
+    heldPcmDeadline = null;
     waitingForChannel = false;
     generalModem?.dispose();
     generalModem = null;
@@ -204,6 +217,10 @@ class _ModemInstance {
   /// failed-CRC frames too (poor receptions are exactly what we want to see).
   void Function(DartDecodeResult result)? onDartAnalysis;
 
+  /// Non-null only for [SoftwareModemMode.xara]: the VARA FM compatible modem,
+  /// running in its own isolate.
+  XaraModem? xara;
+
   // A valid-FCS frame the plain HDLC receiver decoded from inside an FX.25
   // block, held briefly while we wait to see if the FX.25 Reed-Solomon path
   // delivers the same frame. If it does not (RS decode failed or the block did
@@ -231,6 +248,10 @@ class _ModemInstance {
   void processSamples(Uint8List data, int offset, int length) {
     const int chan = 0;
     const int subchan = 0;
+    if (xara != null) {
+      xara!.pushRx(data, offset, length);
+      return;
+    }
     if (dartModem != null) {
       _processDartSamples(data, offset, length);
       return;
@@ -370,6 +391,8 @@ class _ModemInstance {
     _dartScannedPos = 0;
     onDartFrame = null;
     onDartAnalysis = null;
+    xara?.dispose();
+    xara = null;
   }
 }
 
@@ -459,6 +482,11 @@ class _HdlcFx25Bridge implements IHdlcReceiver {
 class SoftwareModem {
   final DataBrokerClient _broker = DataBrokerClient();
   final Map<int, _RadioModemState> _radioModems = {};
+
+  /// Radios currently streaming received audio frames over Bluetooth (between
+  /// a receive AudioDataStart and its AudioDataEnd). This reflects the radio's
+  /// squelch, unlike RSSI, and no software modem transmits while it is set.
+  final Set<int> _radioReceiving = <int>{};
 
   /// Receive-only external audio sources (Audio Receive Devices) keyed by their
   /// own source id. Each holds one decode pipeline fed from a sound-card input
@@ -595,12 +623,59 @@ class SoftwareModem {
       name: 'SoftModemTransmitPacket',
       callback: _onTransmitPacketRequested,
     );
+    _broker.subscribe(
+      deviceId: DataBroker.allDevices,
+      name: 'CancelDataTransmit',
+      callback: _onCancelDataTransmit,
+    );
+    _broker.subscribe(
+      deviceId: DataBroker.allDevices,
+      name: 'BbsEnabled',
+      callback: _onBbsEnabled,
+    );
 
     // Subscribe to channel-clear notifications from all radios
     _broker.subscribe(
       deviceId: DataBroker.allDevices,
       name: 'ChannelClear',
       callback: _onChannelClear,
+    );
+
+    // Received audio runs mark the radio as receiving (squelch open), which
+    // blocks every software modem transmission until the run ends.
+    _broker.subscribe(
+      deviceId: DataBroker.allDevices,
+      name: 'AudioDataStart',
+      callback: _onRadioAudioStart,
+    );
+    _broker.subscribe(
+      deviceId: DataBroker.allDevices,
+      name: 'AudioDataEnd',
+      callback: _onRadioAudioEnd,
+    );
+    _broker.subscribe(
+      deviceId: DataBroker.allDevices,
+      name: 'AudioState',
+      callback: _onRadioAudioState,
+    );
+
+    // XARA (VARA FM compatible) connected-mode link control, per radio.
+    for (final String command in const <String>['XaraConnect', 'XaraSend', 'XaraDisconnect', 'XaraAbort']) {
+      _broker.subscribe(
+        deviceId: DataBroker.allDevices,
+        name: command,
+        callback: _onXaraCommand,
+      );
+    }
+    _broker.subscribe(
+      deviceId: 0,
+      name: 'SetXaraWide',
+      callback: _onSetXaraWideRequested,
+    );
+    _broker.subscribeMultiple(
+      deviceId: 0,
+      names: const <String>['SetXaraTxLatencyMs', 'SetXaraTxKeyUpMs'],
+      callback: _onSetXaraTimingRequested,
     );
 
     // Publish initial mode
@@ -645,6 +720,8 @@ class SoftwareModem {
         return SoftwareModemMode.psk2400;
       case 'DART':
         return SoftwareModemMode.dart;
+      case 'XARA':
+        return SoftwareModemMode.xara;
       default:
         return SoftwareModemMode.none;
     }
@@ -666,6 +743,8 @@ class SoftwareModem {
         return FragmentEncodingType.softwarePsk2400;
       case SoftwareModemMode.dart:
         return FragmentEncodingType.softwareDart;
+      case SoftwareModemMode.xara:
+        return FragmentEncodingType.softwareXara;
       default:
         return FragmentEncodingType.unknown;
     }
@@ -696,12 +775,22 @@ class SoftwareModem {
     final SoftwareModemMode mode = _effectiveGeneralMode(state);
     final SoftwareModemMode current =
         state.generalModem?.mode ?? SoftwareModemMode.none;
-    if (current == mode) return;
+    if (current == mode &&
+        (mode != SoftwareModemMode.xara ||
+            state.generalModem?.xara?.config.wide ==
+                _effectiveXaraWide(state))) {
+      return;
+    }
     state.generalModem?.dispose();
     state.generalModem = mode == SoftwareModemMode.none
         ? null
         : _buildInstance(state, mode, _fecEnabled);
   }
+
+  bool _effectiveXaraWide(_RadioModemState state) =>
+      state.lockXaraWide ??
+      _broker.getValue<bool>(0, 'XaraWide', false) ??
+      false;
 
   /// Sets the software modem mode. When [persist] is false the change is
   /// applied live but the stored user preference (device 0 'SoftwareModemMode')
@@ -709,7 +798,9 @@ class SoftwareModem {
   void setMode(SoftwareModemMode mode, {bool persist = true}) {
     if (_currentMode == mode) return;
 
-    _debug('Changing software modem mode from ${_currentMode.name} to ${mode.name}');
+    _debug(
+      'Changing software modem mode from ${_currentMode.name} to ${mode.name}',
+    );
 
     // Cleanup all existing per-radio modem states
     for (final state in _radioModems.values) {
@@ -816,6 +907,7 @@ class SoftwareModem {
     // Apply to any live DART instances immediately.
     for (final state in _radioModems.values) {
       state.generalModem?.dartCaptureQuality = _dartAnalysisEnabled;
+      state.generalModem?.xara?.setAnalysis(_dartAnalysisEnabled);
     }
     _broker.dispatch(
       deviceId: 0,
@@ -1015,20 +1107,25 @@ class SoftwareModem {
       state.currentChannelName = channelName;
     }
 
-    // Route the audio to the correct pipeline: the dedicated APRS modem when the
-    // radio is currently on the APRS channel, otherwise the general modem. On
-    // the APRS channel only the AFSK 1200 APRS modem runs; elsewhere only the
-    // general modem runs.
-    final _ModemInstance? rx =
-        _isAprsChannel(state) ? state.aprsModem : state.generalModem;
+    // The stream tag is authoritative; late APRS status can otherwise divert
+    // data-channel audio to the APRS modem during a half-duplex turn-around.
+    // In APRSSat mode the stale channel tag is ignored and all audio is APRS;
+    // fall back to the general modem if no APRS modem is enabled.
+    final _ModemInstance? rx = _isAprsSat(state)
+        ? (state.aprsModem ?? state.generalModem)
+        : _isAprsChannel(state, channelName)
+        ? state.aprsModem
+        : state.generalModem;
     rx?.processSamples(data, offset, length);
   }
 
-  /// Whether [state]'s radio is currently tuned to the APRS channel. The audio
-  /// stream's channel name (set from the radio's current channel) is the primary
-  /// signal, reinforced by the cached APRS channel id.
-  bool _isAprsChannel(_RadioModemState state) {
-    if (state.currentChannelName == 'APRS') return true;
+  /// Whether the radio is locked tracking an APRS satellite via VFO A.
+  bool _isAprsSat(_RadioModemState state) =>
+      state.lockIsLocked && state.lockUsage == radio.kAprsSatLockUsage;
+
+  /// Prefer this packet's channel tag, falling back to status only if unnamed.
+  bool _isAprsChannel(_RadioModemState state, String channelName) {
+    if (channelName.isNotEmpty) return channelName == 'APRS';
     return state.aprsChannelId >= 0 &&
         state.currentChannelId == state.aprsChannelId;
   }
@@ -1087,6 +1184,8 @@ class SoftwareModem {
         state.lockModemOverride = _parseLockModem(
           (lockState['modem'] ?? lockState['Modem']) as String?,
         );
+        state.lockXaraWide =
+            (lockState['xaraWide'] ?? lockState['XaraWide']) as bool?;
       }
     }
 
@@ -1183,6 +1282,7 @@ class SoftwareModem {
       case SoftwareModemMode.dart:
         // DART bypasses the Direwolf modem config entirely.
         break;
+      case SoftwareModemMode.xara:
       case SoftwareModemMode.none:
         break;
     }
@@ -1208,6 +1308,59 @@ class SoftwareModem {
           _onDartFrameReceived(state, instance, frame, result);
       instance.onDartAnalysis = (result) => _onDartAnalysis(result);
       _debug('Built DART modem instance for device ${state.deviceId}');
+      return instance;
+    }
+
+    if (mode == SoftwareModemMode.xara) {
+      final String myCall = (_broker.getValue<String>(0, 'CallSign', '') ?? '')
+          .trim()
+          .toUpperCase();
+      final int stationId = _broker.getValue<int>(0, 'StationId', 0) ?? 0;
+      instance.xara = XaraModem(
+        config: XaraModemConfig(
+          callsign: myCall,
+          // Also answer connects addressed to our station SSID (e.g. a BBS
+          // contact saved as CALL-SSID), not just the bare callsign.
+          aliases: [if (stationId > 0 && myCall.isNotEmpty) '$myCall-$stationId'],
+          wide: _effectiveXaraWide(state),
+          registered:
+              _broker.getValue<bool>(0, 'XaraRegistered', false) ?? false,
+          txLatencyMs:
+              _broker.getValue<int>(
+                0,
+                'XaraTxLatencyMs',
+                XaraModemConfig.defaultTxLatencyMs,
+              ) ??
+              XaraModemConfig.defaultTxLatencyMs,
+          txKeyUpMs:
+              _broker.getValue<int>(
+                0,
+                'XaraTxKeyUpMs',
+                XaraModemConfig.defaultTxKeyUpMs,
+              ) ??
+              XaraModemConfig.defaultTxKeyUpMs,
+          sampleRate: sampleRate,
+          analysis: _dartAnalysisEnabled,
+        ),
+        onTransmit: (Uint8List pcm) {
+          // External audio sources are receive-only.
+          if (_disposed || !identical(_radioModems[state.deviceId], state)) return;
+          _broker.dispatch(
+            deviceId: state.deviceId,
+            name: 'TransmitVoicePCM',
+            data: {'Data': pcm, 'PlayLocally': false, 'IsDataFrame': true},
+            store: false,
+          );
+        },
+        onEvent: (Map<String, Object?> e) => _onXaraEvent(state, instance, e),
+      );
+      instance.xara!.setListen(
+        _broker.getValue<bool>(state.deviceId, 'BbsEnabled', true) ?? true,
+      );
+      if (_radioReceiving.contains(state.deviceId)) {
+        instance.xara!.setRadioReceiving(true);
+      }
+      _debug('Built XARA modem instance for device ${state.deviceId}');
       return instance;
     }
 
@@ -1241,6 +1394,8 @@ class SoftwareModem {
         instance.pskDemodState = demodState;
         break;
       case SoftwareModemMode.dart:
+        break; // handled by the early return above
+      case SoftwareModemMode.xara:
         break; // handled by the early return above
       case SoftwareModemMode.none:
         break;
@@ -1415,6 +1570,165 @@ class SoftwareModem {
   }
 
   // ---------------------------------------------------------------------------
+  // XARA (VARA FM compatible) modem
+  // ---------------------------------------------------------------------------
+
+  /// Routes an event from a XARA modem isolate. Unconnected KISS frames join
+  /// the normal AX.25 receive path; link events are published per radio as
+  /// 'XaraLinkState' (stored), 'XaraDataReceived' and 'XaraEvent'.
+  void _onXaraEvent(
+    _RadioModemState state,
+    _ModemInstance instance,
+    Map<String, Object?> e,
+  ) {
+    if (_disposed) return;
+    final int dev = state.deviceId;
+    switch (e['evt']) {
+      case 'kiss':
+        final Object? data = e['data'];
+        if (data is! Uint8List || data.isEmpty) return;
+        _debug('RX XARA: ${data.length}-byte frame: ${_hex(data)}');
+        _refreshFollowedChannel(state);
+        final fragment = TncDataFragment(
+          finalFragment: true,
+          fragmentId: 0,
+          data: Uint8List.fromList(data),
+          channelId: state.currentChannelId,
+          regionId: state.currentRegionId,
+          channelName: state.currentChannelName,
+          incoming: true,
+          encoding: instance.encoding,
+          frameType: FragmentFrameType.ax25,
+          time: DateTime.now(),
+          radioMac: state.macAddress,
+          radioDeviceId: dev,
+        );
+        fragment.corrections = 0;
+        _dispatchDecodedFrame(dev, fragment);
+      case 'data':
+        _broker.dispatch(deviceId: dev, name: 'XaraDataReceived', data: e['data'], store: false);
+      case 'frame':
+        // XARA session traffic goes to the packet capture only; it is not AX.25
+        // so it must not reach UniqueDataFrame consumers.
+        final Object? raw = e['data'];
+        final bool tx = e['tx'] == true;
+        final bool ok = e['ok'] != false;
+        final int record = (e['record'] as int?) ?? -1;
+        _refreshFollowedChannel(state);
+        final capture = TncDataFragment(
+          finalFragment: true,
+          fragmentId: 0,
+          data: XaraCapture.encode(
+            record: record,
+            code: (e['code'] as int?) ?? -1,
+            ok: ok,
+            data: raw is Uint8List ? raw : Uint8List(0),
+            meta: e['meta'] is Map
+                ? (e['meta']! as Map).cast<String, Object?>()
+                : const <String, Object?>{},
+          ),
+          channelId: state.currentChannelId,
+          regionId: state.currentRegionId,
+          channelName: state.currentChannelName,
+          incoming: !tx,
+          encoding: instance.encoding,
+          frameType: FragmentFrameType.xara,
+          time: DateTime.now(),
+          radioMac: state.macAddress,
+          radioDeviceId: dev,
+        );
+        if (!tx && !ok) _debug('RX XARA: record $record failed CRC');
+        _broker.dispatch(deviceId: dev, name: 'CaptureFrame', data: capture, store: false);
+      case 'log':
+        _debug('XARA: ${e['text']}');
+      case 'state':
+        _broker.dispatch(deviceId: dev, name: 'XaraLinkState', data: e, store: true);
+      case 'analysis':
+        if (!_dartAnalysisEnabled) return;
+        _broker.dispatch(
+          deviceId: 1,
+          name: 'DartAnalysis',
+          data: <String, dynamic>{...e, 'time': DateTime.now().toIso8601String()}..remove('evt'),
+          store: true,
+        );
+      default:
+        _broker.dispatch(deviceId: dev, name: 'XaraEvent', data: e, store: false);
+    }
+  }
+
+  /// The XARA modem serving [deviceId]'s general pipeline, created on demand,
+  /// or null when XARA is not the effective software modem for that radio.
+  XaraModem? _xaraFor(int deviceId) {
+    if (!_softwareActiveForDevice(deviceId)) return null;
+    _RadioModemState? state = _radioModems[deviceId];
+    if (state == null) {
+      state = _createRadioModemState(deviceId);
+      if (state == null) return null;
+      _radioModems[deviceId] = state;
+    }
+    return state.generalModem?.xara;
+  }
+
+  /// Switches XARA between narrow and wide FM. Live XARA modems are rebuilt, which
+  /// drops any link in progress.
+  void _onSetXaraWideRequested(int deviceId, String name, Object? data) {
+    if (_disposed || data is! bool) return;
+    _broker.dispatch(deviceId: 0, name: 'XaraWide', data: data, store: true);
+    for (final _RadioModemState state in _radioModems.values) {
+      if (state.generalModem?.xara == null) continue;
+      _rebuildGeneralModem(state);
+    }
+    _debug('XARA bandwidth set to ${data ? "wide" : "narrow"}');
+  }
+
+  /// Changes XARA's transmit latency or key-up pre-roll (`SetXaraTxLatencyMs` /
+  /// `SetXaraTxKeyUpMs`, in ms). Both are read when a modem is built, so live
+  /// XARA modems are rebuilt, which drops any link in progress.
+  void _onSetXaraTimingRequested(int deviceId, String name, Object? data) {
+    if (_disposed || data is! num) return;
+    final int ms = data.toInt().clamp(0, 5000);
+    final String setting = name.substring('Set'.length);
+    _broker.dispatch(deviceId: 0, name: setting, data: ms, store: true);
+    for (final _RadioModemState state in _radioModems.values) {
+      if (state.generalModem?.xara == null) continue;
+      state.generalModem!.dispose();
+      state.generalModem = _buildInstance(state, SoftwareModemMode.xara, _fecEnabled);
+    }
+    _debug('$setting set to $ms ms');
+  }
+
+  /// Handles 'XaraConnect' (`{'Remote': String, 'Vias': List<String>}`),
+  /// 'XaraSend' (Uint8List or String), 'XaraDisconnect' and 'XaraAbort'.
+  void _onXaraCommand(int deviceId, String name, Object? data) {
+    if (_disposed || deviceId <= 0) return;
+    final XaraModem? x = _xaraFor(deviceId);
+    if (x == null) {
+      _debug('$name ignored: XARA is not the software modem on device $deviceId');
+      return;
+    }
+    switch (name) {
+      case 'XaraConnect':
+        final Object? remote = data is Map ? (data['Remote'] ?? data['remote']) : data;
+        if (remote is! String || remote.trim().isEmpty) return;
+        final Object? vias = data is Map ? (data['Vias'] ?? data['vias']) : null;
+        x.connect(
+          remote.trim().toUpperCase(),
+          vias is List ? vias.map((v) => v.toString().trim().toUpperCase()).toList() : const <String>[],
+        );
+      case 'XaraSend':
+        if (data is Uint8List) {
+          x.send(data);
+        } else if (data is String) {
+          x.send(Uint8List.fromList(data.codeUnits));
+        }
+      case 'XaraDisconnect':
+        x.disconnect();
+      case 'XaraAbort':
+        x.abort();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // HtStatus tracking
   // ---------------------------------------------------------------------------
 
@@ -1430,12 +1744,13 @@ class SoftwareModem {
       state.currentRegionId =
           _readInt(data['currRegion'] ?? data['curr_region'] ?? data['CurrRegion']) ?? state.currentRegionId;
 
-      // Track whether the channel is currently clear
-      final int rssi = _readInt(data['rssi'] ?? data['Rssi']) ?? 1;
+      // Track whether the channel is currently clear. RSSI is ignored: it does
+      // not honour the radio's squelch. Receive activity comes from Bluetooth
+      // audio runs instead (see _onRadioAudioStart / _onRadioAudioEnd).
       final bool isInTx =
           (data['isInTx'] ?? data['is_in_tx'] ?? data['IsInTx']) as bool? ??
               false;
-      final bool isClear = rssi == 0 && !isInTx;
+      final bool isClear = _channelClearFor(state, isInTx);
       final bool wasClear = state.channelIsClear;
       state.channelIsClear = isClear;
 
@@ -1444,10 +1759,56 @@ class SoftwareModem {
       if (isClear &&
           !wasClear &&
           state.waitingForChannel &&
-          state.transmitQueue.isNotEmpty) {
+          state.hasPendingTx) {
         _beginChannelAccess(state);
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Receive-activity tracking (Bluetooth audio runs)
+  // ---------------------------------------------------------------------------
+
+  /// True when [state]'s radio is neither receiving audio nor transmitting.
+  bool _channelClearFor(_RadioModemState state, bool isInTx) =>
+      !_radioReceiving.contains(state.deviceId) && !isInTx;
+
+  void _onRadioAudioStart(int deviceId, String name, Object? data) {
+    if (_disposed || deviceId <= 0 || data is! Map) return;
+    if ((data['transmit'] ?? data['Transmit']) as bool? ?? false) return;
+    _setRadioReceiving(deviceId, true);
+  }
+
+  void _onRadioAudioEnd(int deviceId, String name, Object? data) {
+    if (_disposed || deviceId <= 0 || data is! Map) return;
+    if ((data['transmit'] ?? data['Transmit']) as bool? ?? false) return;
+    _setRadioReceiving(deviceId, false);
+  }
+
+  /// Audio turned off (or the radio disconnected) ends any receive run.
+  void _onRadioAudioState(int deviceId, String name, Object? data) {
+    if (_disposed || deviceId <= 0 || data == true) return;
+    _setRadioReceiving(deviceId, false);
+  }
+
+  void _setRadioReceiving(int deviceId, bool on) {
+    final bool changed =
+        on ? _radioReceiving.add(deviceId) : _radioReceiving.remove(deviceId);
+    if (!changed) return;
+    final _RadioModemState? state = _radioModems[deviceId];
+    if (state == null) return;
+    for (final _ModemInstance? m in <_ModemInstance?>[
+      state.generalModem,
+      state.aprsModem,
+    ]) {
+      m?.xara?.setRadioReceiving(on);
+    }
+    if (on) {
+      state.channelIsClear = false;
+      return;
+    }
+    _refreshChannelClear(state);
+    if (state.channelIsClear && state.hasPendingTx) _beginChannelAccess(state);
   }
 
   // ---------------------------------------------------------------------------
@@ -1466,13 +1827,16 @@ class SoftwareModem {
     String? usage;
     int channelId = -1;
     SoftwareModemMode? modemOverride;
+    bool? xaraWide;
     if (data is Map) {
       isLocked = (data['isLocked'] ?? data['IsLocked']) as bool? ?? false;
       usage = (data['usage'] ?? data['Usage']) as String?;
       channelId = _readInt(data['channelId'] ?? data['ChannelId']) ?? -1;
       if (isLocked && usage != null && usage.isNotEmpty) {
-        modemOverride =
-            _parseLockModem((data['modem'] ?? data['Modem']) as String?);
+        modemOverride = _parseLockModem(
+          (data['modem'] ?? data['Modem']) as String?,
+        );
+        xaraWide = (data['xaraWide'] ?? data['XaraWide']) as bool?;
       } else {
         isLocked = false;
         usage = null;
@@ -1497,6 +1861,7 @@ class SoftwareModem {
     state.lockUsage = usage;
     state.lockChannelId = channelId;
     state.lockModemOverride = modemOverride;
+    state.lockXaraWide = xaraWide;
 
     // The override may switch this radio's general modem on, off, or to a
     // different mode independent of the global setting.
@@ -1506,6 +1871,16 @@ class SoftwareModem {
   // ---------------------------------------------------------------------------
   // Packet transmission
   // ---------------------------------------------------------------------------
+
+  void _onCancelDataTransmit(int deviceId, String name, Object? data) {
+    if (_disposed) return;
+    _radioModems.remove(deviceId)?.dispose();
+  }
+
+  void _onBbsEnabled(int deviceId, String name, Object? data) {
+    if (_disposed || data is! bool) return;
+    _radioModems[deviceId]?.generalModem?.xara?.setListen(data);
+  }
 
   void _onTransmitPacketRequested(int deviceId, String name, Object? data) {
     if (_disposed || deviceId <= 0) return;
@@ -1538,13 +1913,28 @@ class SoftwareModem {
     // Route to the APRS instance for APRS-channel frames, else the general one.
     final bool isAprs = fragment.channelName == 'APRS' ||
         (state.aprsChannelId >= 0 && fragment.channelId == state.aprsChannelId);
-    final _ModemInstance? target =
+    _ModemInstance? target =
         isAprs ? state.aprsModem : state.generalModem;
+    if (fragment.encoding != FragmentEncodingType.unknown &&
+        target?.encoding != fragment.encoding) {
+      target = state.generalModem?.encoding == fragment.encoding
+          ? state.generalModem
+          : state.aprsModem?.encoding == fragment.encoding
+          ? state.aprsModem
+          : null;
+    }
     if (target == null) {
       _debug(
         'TransmitPacket: no ${isAprs ? "APRS" : "general"} modem instance for '
-        'device $deviceId - dropping frame',
+        'device $deviceId matching ${fragment.encoding.name} - dropping frame',
       );
+      return;
+    }
+
+    if (target.xara != null) {
+      // XARA schedules its own unconnected (record 16) transmissions, waits for
+      // a clear channel itself and holds every burst while the radio receives.
+      target.xara!.kiss(Uint8List.fromList(fragment.data));
       return;
     }
 
@@ -1576,7 +1966,8 @@ class SoftwareModem {
 
     final state = _radioModems[deviceId];
     if (state == null) return;
-    if (!state.waitingForChannel || state.transmitQueue.isEmpty) return;
+    if (!state.waitingForChannel || !state.hasPendingTx) return;
+    if (_radioReceiving.contains(deviceId)) return;
 
     state.channelIsClear = true;
     _beginChannelAccess(state);
@@ -1585,7 +1976,8 @@ class SoftwareModem {
   // ---------------------------------------------------------------------------
   // Channel access - p-persistent CSMA (matches Direwolf's wait_for_clear_channel)
   //
-  // After the channel is sensed clear (RSSI == 0 and we are not transmitting),
+  // After the channel is sensed clear (the radio is not streaming received
+  // audio, i.e. its squelch is closed, and we are not transmitting),
   // wait one "slot time" then transmit with probability persist/256; otherwise
   // wait another slot and try again. Re-checking the channel on every slot and
   // only transmitting probabilistically spreads out stations that were all
@@ -1601,7 +1993,7 @@ class SoftwareModem {
     if (_disposed) return;
 
     _dropExpired(state);
-    if (state.transmitQueue.isEmpty) {
+    if (!state.hasPendingTx) {
       state.waitingForChannel = false;
       return;
     }
@@ -1632,14 +2024,14 @@ class SoftwareModem {
     if (_disposed) return;
 
     _dropExpired(state);
-    if (state.transmitQueue.isEmpty) {
+    if (!state.hasPendingTx) {
       state.waitingForChannel = false;
       return;
     }
 
-    // Re-sense the channel each slot from the latest HtStatus (Direwolf checks
-    // the channel on every slot). Someone else may have started transmitting
-    // during the slot - if so, go back to waiting for the channel to clear.
+    // Re-sense the channel each slot (Direwolf checks the channel on every
+    // slot). Someone else may have started transmitting during the slot - if
+    // so, go back to waiting for the channel to clear.
     _refreshChannelClear(state);
     if (!state.channelIsClear) {
       state.waitingForChannel = true;
@@ -1656,22 +2048,27 @@ class SoftwareModem {
     }
   }
 
-  /// Sense the current channel state from the radio's latest HtStatus and
-  /// update [state.channelIsClear]. HtStatus is only dispatched on change, so a
-  /// steadily-free channel would otherwise leave the cached flag stale.
+  /// Sense the current channel state and update [state.channelIsClear]: busy
+  /// while the radio streams received audio or reports it is transmitting.
+  /// HtStatus is only dispatched on change, so the latest stored value is read.
   void _refreshChannelClear(_RadioModemState state) {
     final Object? ht =
         _broker.getValue<Object>(state.deviceId, 'HtStatus', null);
-    if (ht is Map) {
-      final int rssi = _readInt(ht['rssi'] ?? ht['Rssi']) ?? 1;
-      final bool isInTx =
-          (ht['isInTx'] ?? ht['is_in_tx'] ?? ht['IsInTx']) as bool? ?? false;
-      state.channelIsClear = rssi == 0 && !isInTx;
-    }
+    final bool isInTx = ht is Map &&
+        ((ht['isInTx'] ?? ht['is_in_tx'] ?? ht['IsInTx']) as bool? ?? false);
+    state.channelIsClear = _channelClearFor(state, isInTx);
   }
 
   void _dropExpired(_RadioModemState state) {
     final now = DateTime.now();
+    final DateTime? heldDeadline = state.heldPcmDeadline;
+    if (state.heldPcm != null &&
+        heldDeadline != null &&
+        now.isAfter(heldDeadline)) {
+      state.heldPcm = null;
+      state.heldPcmDeadline = null;
+      _debug('Dropped expired held transmission on device ${state.deviceId}');
+    }
     while (state.transmitQueue.isNotEmpty &&
         now.isAfter(state.transmitQueue.first.deadline)) {
       state.transmitQueue.removeAt(0);
@@ -1686,13 +2083,14 @@ class SoftwareModem {
     state.channelWaitTimer = null;
 
     _dropExpired(state);
-    if (state.transmitQueue.isEmpty) {
+    if (!state.hasPendingTx) {
       state.waitingForChannel = false;
       return;
     }
 
     // If the channel went busy again, wait for it to clear.
-    if (!state.channelIsClear) {
+    if (!state.channelIsClear || _radioReceiving.contains(state.deviceId)) {
+      state.channelIsClear = false;
       state.waitingForChannel = true;
       return;
     }
@@ -1703,6 +2101,22 @@ class SoftwareModem {
     // finishes and keys up.
     if (state.encoding) {
       state.waitingForChannel = true;
+      return;
+    }
+
+    // A bundle that was held back because reception started during its encode
+    // goes out first, unchanged (DART sequence numbers are already assigned).
+    final Uint8List? held = state.heldPcm;
+    if (held != null) {
+      state.heldPcm = null;
+      state.heldPcmDeadline = null;
+      state.channelIsClear = false;
+      state.waitingForChannel = state.transmitQueue.isNotEmpty;
+      _dispatchDataPcm(state, held);
+      _debug(
+        'Transmitted held bundle, ${held.length ~/ 2} samples on device '
+        '${state.deviceId}',
+      );
       return;
     }
 
@@ -1733,7 +2147,7 @@ class SoftwareModem {
       state.encoding = false;
     }
 
-    if (_disposed) return;
+    if (_disposed || !identical(_radioModems[state.deviceId], state)) return;
 
     final bool moreQueued = state.transmitQueue.isNotEmpty;
     state.waitingForChannel = moreQueued;
@@ -1743,16 +2157,37 @@ class SoftwareModem {
       return;
     }
 
-    _broker.dispatch(
-      deviceId: state.deviceId,
-      name: 'TransmitVoicePCM',
-      data: {'Data': pcmData, 'PlayLocally': false, 'IsDataFrame': true},
-      store: false,
-    );
+    // Reception may have started while the bundle was being modulated: never
+    // key up over it. Hold the encoded audio and send it once the radio stops
+    // receiving.
+    if (_radioReceiving.contains(state.deviceId)) {
+      state.heldPcm = pcmData;
+      state.heldPcmDeadline = bundle
+          .map((p) => p.deadline)
+          .reduce((a, b) => a.isBefore(b) ? a : b);
+      state.channelIsClear = false;
+      state.waitingForChannel = true;
+      _debug(
+        'Radio started receiving during encode; holding ${bundle.length} '
+        'packet(s) on device ${state.deviceId}',
+      );
+      return;
+    }
+
+    _dispatchDataPcm(state, pcmData);
     _debug(
       'Transmitted ${bundle.length} bundled packet(s), '
       '${pcmData.length ~/ 2} samples on device ${state.deviceId}'
       '${moreQueued ? " (${state.transmitQueue.length} still queued)" : ""}',
+    );
+  }
+
+  void _dispatchDataPcm(_RadioModemState state, Uint8List pcm) {
+    _broker.dispatch(
+      deviceId: state.deviceId,
+      name: 'TransmitVoicePCM',
+      data: {'Data': pcm, 'PlayLocally': false, 'IsDataFrame': true},
+      store: false,
     );
   }
 
@@ -1822,6 +2257,7 @@ class SoftwareModem {
       case SoftwareModemMode.psk2400:
         return PacketModulation.psk2400;
       case SoftwareModemMode.dart:
+      case SoftwareModemMode.xara:
       case SoftwareModemMode.none:
         return null;
     }
@@ -1844,6 +2280,9 @@ class SoftwareModem {
         (fragment.channelId == state.lockChannelId ||
             state.lockUsage == radio.kAprsSatLockUsage)) {
       fragment.usage = state.lockUsage;
+      if (state.lockUsage == radio.kAprsSatLockUsage) {
+        fragment.channelName = 'APRS';
+      }
     }
     // Record which radio this frame arrived on so the packet capture can show
     // it. Mirrors Radio._emitDataFrame for the hardware modem path.

@@ -667,7 +667,7 @@ class RadioFreqModePar {
 
   /// The teardown payload: an all-zero FREQ_MODE_SET_PAR drops the radio out of
   /// frequency (VFO) mode and restores its normal channel state, ending a
-  /// tracking session.
+  /// tracking session. The radio needs it sent twice (see Radio.stopFreqMode).
   const RadioFreqModePar.stop()
     : rxFreq = 0,
       txFreq = 0,
@@ -1092,6 +1092,7 @@ class RadioLockState {
   /// 'AFSK1200', 'PSK2400', 'DART'). `null` means no override: the global
   /// software modem setting is used.
   String? modem;
+  bool? xaraWide;
 
   RadioLockState({
     this.isLocked = false,
@@ -1099,6 +1100,7 @@ class RadioLockState {
     this.regionId = -1,
     this.channelId = -1,
     this.modem,
+    this.xaraWide,
   });
 
   Map<String, dynamic> toJson() => {
@@ -1107,6 +1109,7 @@ class RadioLockState {
     'regionId': regionId,
     'channelId': channelId,
     'modem': modem,
+    'xaraWide': xaraWide,
   };
 
   factory RadioLockState.fromJson(Map<String, dynamic> json) {
@@ -1116,6 +1119,7 @@ class RadioLockState {
       regionId: json['regionId'] as int? ?? json['RegionId'] as int? ?? -1,
       channelId: json['channelId'] as int? ?? json['ChannelId'] as int? ?? -1,
       modem: json['modem'] as String? ?? json['Modem'] as String?,
+      xaraWide: json['xaraWide'] as bool? ?? json['XaraWide'] as bool?,
     );
   }
 }

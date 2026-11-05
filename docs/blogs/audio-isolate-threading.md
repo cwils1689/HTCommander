@@ -16,6 +16,37 @@ dedicated audio isolate, and the one hard lesson that reshaped the design.*
 > *“The hard lesson”* below). The plan sections are kept as originally written;
 > the findings correct them where reality disagreed.
 
+**Half-duplex turn-around:** the audio frame parser must keep draining a Bluetooth
+read when it skips audio from the opposite direction. An end-of-audio marker and
+the next received burst can be coalesced in that same read. Returning early leaves
+those frames queued and can prevent the software modem from hearing a reply.
+Regression tests cover both receive-to-transmit and transmit-to-receive overlap;
+overlapping audio remains ignored while transmitting, but subsequent end markers
+and audio are processed. After local transmission finishes, a received-audio frame
+also closes a lingering transmit-echo run if its end marker was missing or arrived
+before a late echo. This recovery is logged; it prevents that stale run from
+suppressing every subsequent received burst.
+Starting local TX also closes a receive run whose end marker never arrived, so
+TX has its own start/end events and its duration cannot inflate later RX timing
+statistics.
+
+**Receive diagnostics:** packet-arrival duration minus decoded SBC duration is an
+observed audio shortfall, not proof of Bluetooth packet loss. Windows queues
+RFCOMM reads before delivering them on the Flutter platform thread; platform
+delivery and isolate scheduling can delay or batch arrivals. Missing run
+delimiters and rejected SBC frames can also distort the comparison. Shortfall
+reports include received packet/payload counts, decoded frame/sample counts, SBC
+formats, and decode-error/discarded-byte counts. SBC rejections are logged with
+their reason; valid decoded prefixes retain their existing delivery behavior.
+Decoded duration uses each frame's advertised sample rate. These diagnostics do
+not establish whether a transport gap originated at the radio, Bluetooth, or host.
+
+**APRS/data routing:** a received PCM packet's non-empty channel name selects the
+modem pipeline. A packet tagged `House` must reach the general modem even if a
+later status notification reports the APRS channel; a packet tagged `APRS` still
+goes only to the APRS modem. Cached status is used only when the packet has no
+channel tag. This prevents late APRS telemetry from swallowing XARA replies.
+
 ---
 
 ## The symptom: audio that stutters when the UI is busy

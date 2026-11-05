@@ -85,11 +85,15 @@ class TransmitDataFrameData {
   final int channelId;
   final int regionId;
 
+  /// A session's reply encoding; unknown uses the normal modem selection.
+  final FragmentEncodingType encoding;
+
   TransmitDataFrameData({
     this.packet,
     this.bssPacket,
     this.channelId = -1,
     this.regionId = -1,
+    this.encoding = FragmentEncodingType.unknown,
   });
 }
 
@@ -112,12 +116,16 @@ class SetLockData {
   /// setting.
   final String? modem;
 
+  /// XARA bandwidth override for this lock; null keeps the global setting.
+  final bool? xaraWide;
+
   SetLockData({
     required this.usage,
     this.regionId = -1,
     this.channelId = -1,
     this.channelName,
     this.modem,
+    this.xaraWide,
   });
 }
 
@@ -162,6 +170,7 @@ class Radio implements FirmwareRadio {
   // Transmit queue
   final List<_FragmentInQueue> _tncFragmentQueue = [];
   bool _tncFragmentInFlight = false;
+  bool _tncFragmentInFlightCancelled = false;
 
   // Clear channel timer
   Timer? _clearChannelTimer;
@@ -233,6 +242,23 @@ class Radio implements FirmwareRadio {
   // Counts satellite-tracking updates sent since the current Satellite lock, so
   // the first couple carry the 0x0A03 mode-entry flags (then 0x0A00).
   int _satTrackCount = 0;
+  static const int defaultSatelliteDopplerThresholdHz = 1000;
+  RadioFreqModePar? _lastSatelliteTuning;
+  SatelliteTrackParams? _latestSatelliteTrack;
+  (int?, int, String)? _satelliteTarget;
+  bool _satelliteRxActive = false;
+  // Pending second all-zero FREQ_MODE_SET_PAR; see [stopFreqMode].
+  Timer? _freqModeStopTimer;
+  Timer? _htStatusRefreshTimer;
+  // Set once the radio leaves frequency (VFO) / satellite mode while its HT
+  // status still reports channel id 254+. The radio does not refresh that id
+  // until it next receives a signal, so until it reports a real channel the
+  // stale id is replaced with settings channel A (see [_patchStaleVfoChannel]).
+  bool _vfoExitPending = false;
+  bool _freqModeWasActive = false;
+  // Last HT status frame exactly as reported by the radio (before patching).
+  Uint8List? _htStatusRadioRaw;
+  static const Duration freqModeStopRepeatDelay = Duration(milliseconds: 200);
 
   // Tracks the FM broadcast (is_radio) state so we request the FM frequency once
   // when the radio enters FM broadcast mode.
@@ -361,6 +387,11 @@ class Radio implements FirmwareRadio {
       name: 'TransmitDataFrame',
       callback: _onTransmitDataFrameEvent,
     );
+    _broker.subscribe(
+      deviceId: deviceId,
+      name: 'CancelDataTransmit',
+      callback: _onCancelDataTransmit,
+    );
 
     // PCM sent to this radio for transmission (e.g. the software modem after
     // winning channel access) means the radio is keying up.
@@ -424,6 +455,16 @@ class Radio implements FirmwareRadio {
       deviceId: deviceId,
       name: 'SatelliteTrackUpdate',
       callback: _onSatelliteTrackUpdate,
+    );
+    _broker.subscribeMultiple(
+      deviceId: deviceId,
+      names: ['AudioDataStart', 'AudioDataEnd', 'AudioState'],
+      callback: _onSatelliteAudioActivity,
+    );
+    _broker.subscribeMultiple(
+      deviceId: 0,
+      names: ['SatelliteTrackTarget', 'SatelliteSupport'],
+      callback: _onSatelliteTrackingChanged,
     );
 
     // Subscribe to volume events
@@ -753,6 +794,13 @@ class Radio implements FirmwareRadio {
     if (data is String) _liveSoftwareModemMode = data;
   }
 
+  void _onCancelDataTransmit(int devId, String name, Object? data) {
+    _tncFragmentQueue.clear();
+    // Keep an outstanding command's ACK separate from any newly queued data.
+    _tncFragmentInFlightCancelled = _tncFragmentInFlight;
+    _cancelTxStallWatchdog();
+  }
+
   void _onTransmitDataFrameEvent(int devId, String name, dynamic data) {
     if (devId != deviceId) return;
     if (data is! TransmitDataFrameData) return;
@@ -770,6 +818,7 @@ class Radio implements FirmwareRadio {
         regionId: txData.regionId,
         tag: packet.tag,
         deadline: packet.deadline,
+        encoding: txData.encoding,
       );
     } else if (txData.bssPacket != null) {
       // BSS packets carry no channel name; an empty name plus channelId -1
@@ -808,7 +857,18 @@ class Radio implements FirmwareRadio {
   void _onSetLockEvent(int devId, String name, dynamic data) {
     if (devId != deviceId) return;
     if (data is! SetLockData) return;
-    if (_lockState != null || settings == null || htStatus == null) return;
+    if (_lockState != null || settings == null || htStatus == null) {
+      _broker.logError(
+        '[Radio $deviceId] SetLock rejected: requestedUsage=${data.usage} '
+        'lockOwner=${_lockState?.usage} '
+        'settingsAvailable=${settings != null} '
+        'statusAvailable=${htStatus != null} '
+        'requestedRegion=${data.regionId} requestedChannel=${data.channelId} '
+        'reportedRegion=${htStatus?.currRegion} '
+        'reportedChannel=${htStatus?.currChId}',
+      );
+      return;
+    }
 
     final lockData = data;
 
@@ -829,8 +889,9 @@ class Radio implements FirmwareRadio {
         regionId: -1,
         channelId: -1,
         modem: lockData.modem,
+        xaraWide: lockData.xaraWide,
       );
-      _satTrackCount = 0;
+      _resetSatelliteTuning();
       _dispatch('LockState', _lockState!.toJson());
       _debug("Radio locked for '${lockData.usage}' tracking");
       return;
@@ -866,6 +927,7 @@ class Radio implements FirmwareRadio {
       regionId: targetRegionId,
       channelId: targetChannelId,
       modem: lockData.modem,
+      xaraWide: lockData.xaraWide,
     );
 
     _dispatch('LockState', _lockState!.toJson());
@@ -909,16 +971,14 @@ class Radio implements FirmwareRadio {
       "Radio unlocked from usage '${unlockData.usage}' - Restoring previous settings",
     );
 
-    // Satellite modes never forced a channel; sending an all-zero
-    // FREQ_MODE_SET_PAR drops the radio out of frequency (VFO) mode and lets it
-    // restore its own channel state, so there is nothing to write back here.
+    // Satellite modes never forced a channel; sending all-zero
+    // FREQ_MODE_SET_PAR (twice, see [stopFreqMode]) drops the radio out of
+    // frequency (VFO) mode and lets it restore its own channel state, so there
+    // is nothing to write back here.
     if (kSatelliteLockUsages.contains(unlockData.usage)) {
       stopFreqMode();
       _lockState = null;
-      _dispatch(
-        'LockState',
-        RadioLockState(isLocked: false).toJson(),
-      );
+      _dispatch('LockState', RadioLockState(isLocked: false).toJson());
       return;
     }
 
@@ -970,15 +1030,11 @@ class Radio implements FirmwareRadio {
       // Tell the UI the configured channel is missing in the switched-to region
       // so it can offer to fix the contact. The lock stays on the current
       // channel until the caller unlocks.
-      _dispatch(
-        'LockChannelResolveFailed',
-        {
-          'usage': lock.usage,
-          'channel': chName,
-          'region': htStatus?.currRegion,
-        },
-        store: false,
-      );
+      _dispatch('LockChannelResolveFailed', {
+        'usage': lock.usage,
+        'channel': chName,
+        'region': htStatus?.currRegion,
+      }, store: false);
       return;
     }
 
@@ -988,6 +1044,7 @@ class Radio implements FirmwareRadio {
       regionId: lock.regionId,
       channelId: ch.channelId,
       modem: lock.modem,
+      xaraWide: lock.xaraWide,
     );
     _dispatch('LockState', _lockState!.toJson());
     _debug(
@@ -1012,6 +1069,12 @@ class Radio implements FirmwareRadio {
     if (data is! SatelliteTrackParams) return;
     if (!kSatelliteLockUsages.contains(_lockState?.usage)) return;
 
+    final target = (data.noradId, data.usageIndex, data.name);
+    if (_satelliteTarget != target) {
+      _resetSatelliteTuning();
+      _satelliteTarget = target;
+    }
+    _latestSatelliteTrack = data;
     setSatelliteInfo(
       RadioSatelliteInfo(
         name: data.name,
@@ -1022,22 +1085,76 @@ class Radio implements FirmwareRadio {
         secondsToNextPass: data.secondsToNextPass,
       ),
     );
+    _applySatelliteTuning();
+  }
+
+  void _resetSatelliteTuning() {
+    _satTrackCount = 0;
+    _lastSatelliteTuning = null;
+    _latestSatelliteTrack = null;
+    _satelliteTarget = null;
+  }
+
+  void _onSatelliteTrackingChanged(int devId, String name, Object? data) {
+    if (name == 'SatelliteSupport') {
+      if (data != 1) _resetSatelliteTuning();
+    } else if (data is! Map || data['radioDeviceId'] != deviceId) {
+      _resetSatelliteTuning();
+    }
+  }
+
+  void _onSatelliteAudioActivity(int devId, String name, Object? data) {
+    if (name == 'AudioState') {
+      if (data != false) return;
+      _satelliteRxActive = false;
+    } else {
+      if (data is! Map || data['transmit'] != false) return;
+      _satelliteRxActive = name == 'AudioDataStart';
+    }
+    if (!_satelliteRxActive) _applySatelliteTuning();
+  }
+
+  void _applySatelliteTuning() {
+    final data = _latestSatelliteTrack;
+    if (data == null || _transport == null) return;
+    if (!kSatelliteLockUsages.contains(_lockState?.usage)) return;
+    final last = _lastSatelliteTuning;
     // The high flags byte 0x0A switches the radio to its satellite (VFO)
     // tracking screen. The manufacturer app sends 0x0A03 on the first couple of
     // updates, then settles to 0x0A00 — replicated here so the radio enters and
     // stays in satellite mode.
     final flags = _satTrackCount < 2 ? 0x0A03 : 0x0A00;
-    _satTrackCount++;
-    freqModeSetPar(
-      RadioFreqModePar(
-        rxFreq: data.rxFreqHz,
-        txFreq: data.txFreqHz,
-        txSubAudio: data.txCtcssHz == null
-            ? 0
-            : (data.txCtcssHz! * 100).round(),
-        flags: flags,
-      ),
+    final par = RadioFreqModePar(
+      rxFreq: data.rxFreqHz,
+      txFreq: data.txFreqHz,
+      txSubAudio: data.txCtcssHz == null ? 0 : (data.txCtcssHz! * 100).round(),
+      flags: flags,
     );
+    final configurationChanged =
+        last == null ||
+        par.txSubAudio != last.txSubAudio ||
+        (par.rxFreq == 0) != (last.rxFreq == 0) ||
+        (par.txFreq == 0) != (last.txFreq == 0);
+    // Initial tuning and explicit configuration changes override the RX hold.
+    if (!configurationChanged &&
+        _satelliteRxActive &&
+        (_broker.getValue<bool>(0, 'SatelliteHoldDopplerDuringRx') ?? false)) {
+      return;
+    }
+    final threshold =
+        _broker.getValue<int>(0, 'SatelliteDopplerThresholdHz') ??
+        defaultSatelliteDopplerThresholdHz;
+    final rxDelta = last == null ? 0 : (par.rxFreq - last.rxFreq).abs();
+    final txDelta = last == null ? 0 : (par.txFreq - last.txFreq).abs();
+    if (!configurationChanged &&
+        _satTrackCount >= 3 &&
+        !(rxDelta > 0 && rxDelta >= threshold) &&
+        !(txDelta > 0 && txDelta >= threshold)) {
+      return;
+    }
+    freqModeSetPar(par);
+    _lastSatelliteTuning = par;
+    _satTrackCount++;
   }
 
   void _onSetVolumeLevelEvent(int devId, String name, dynamic data) {
@@ -1084,7 +1201,7 @@ class Radio implements FirmwareRadio {
       _debugGpsReason(
         'sharingDisabled',
         'Serial GPS: dropping fix - sharing disabled '
-        '(ShareSerialGpsLocation is off)',
+            '(ShareSerialGpsLocation is off)',
       );
       return;
     }
@@ -1101,7 +1218,7 @@ class Radio implements FirmwareRadio {
       _debugGpsReason(
         'badType',
         'Serial GPS: dropping event - unrecognized data type '
-        '(${data.runtimeType})',
+            '(${data.runtimeType})',
       );
       return;
     }
@@ -1142,8 +1259,8 @@ class Radio implements FirmwareRadio {
       _debugGpsReason(
         'throttled',
         'Serial GPS: holding fix - SmartBeaconing throttle '
-        '(${speedKnots.toStringAsFixed(1)} kn, '
-        '${heading.toStringAsFixed(0)}\u00b0, waiting for next beacon)',
+            '(${speedKnots.toStringAsFixed(1)} kn, '
+            '${heading.toStringAsFixed(0)}\u00b0, waiting for next beacon)',
       );
       return;
     }
@@ -1438,6 +1555,13 @@ class Radio implements FirmwareRadio {
 
     _updateState(newState);
     _initRetryTimer?.cancel();
+    _freqModeStopTimer?.cancel();
+    _freqModeStopTimer = null;
+    _htStatusRefreshTimer?.cancel();
+    _htStatusRefreshTimer = null;
+    _vfoExitPending = false;
+    _freqModeWasActive = false;
+    _htStatusRadioRaw = null;
     _transport?.disconnect();
 
     // Clear data via broker
@@ -1468,7 +1592,10 @@ class Radio implements FirmwareRadio {
     _frameAccumulator = null;
     _tncFragmentQueue.clear();
     _tncFragmentInFlight = false;
+    _tncFragmentInFlightCancelled = false;
     _lockState = null;
+    _resetSatelliteTuning();
+    _satelliteRxActive = false;
     _gpsEnabled = false;
     _positionNotifyRegistered = false;
     _cancelPendingChannelReads();
@@ -1642,8 +1769,10 @@ class Radio implements FirmwareRadio {
       Uint8List.fromList([_trustedDeviceIndex & 0xFF]),
     );
     _trustedDeviceTimer?.cancel();
-    _trustedDeviceTimer =
-        Timer(_trustedDeviceTimeout, _finishTrustedDeviceQuery);
+    _trustedDeviceTimer = Timer(
+      _trustedDeviceTimeout,
+      _finishTrustedDeviceQuery,
+    );
   }
 
   /// Ends the trusted-device enumeration and publishes the final list.
@@ -1778,11 +1907,7 @@ class Radio implements FirmwareRadio {
         0,
         _regionNameLength,
       );
-      _dispatch(
-        'RegionNames',
-        List<String?>.from(regionNames),
-        store: true,
-      );
+      _dispatch('RegionNames', List<String?>.from(regionNames), store: true);
     }
   }
 
@@ -1911,9 +2036,15 @@ class Radio implements FirmwareRadio {
 
   /// Tunes the VFO to explicit RX/TX frequencies (FREQ_MODE_SET_PAR, 35),
   /// putting the radio into frequency (VFO) mode. This is the workhorse of
-  /// satellite Doppler tracking: send it ~once a second with freshly
-  /// Doppler-corrected frequencies for the length of a pass.
+  /// satellite Doppler tracking; the tracking path limits these commands by
+  /// frequency drift and the optional receive-audio hold.
   void freqModeSetPar(RadioFreqModePar par) {
+    // A new tuning supersedes any pending teardown repeat.
+    if (par.rxFreq != 0 || par.txFreq != 0) {
+      _freqModeStopTimer?.cancel();
+      _freqModeStopTimer = null;
+      _vfoExitPending = false;
+    }
     _sendCommand(
       RadioCommandGroup.basic,
       RadioBasicCommand.freqModeSetPar,
@@ -1924,13 +2055,26 @@ class Radio implements FirmwareRadio {
   /// Drops the radio out of frequency (VFO) mode by sending a FREQ_MODE_SET_PAR
   /// with an all-zero payload, ending a satellite tracking session and
   /// restoring the radio's normal channel state.
+  ///
+  /// The stop is sent twice, [freqModeStopRepeatDelay] apart, as the
+  /// manufacturer app does: after the first all-zero frame the radio still
+  /// reports frequency mode active (freqModeStatusChanged flags 0x40) and only
+  /// returns to channel mode after the second one.
   void stopFreqMode() {
+    _resetSatelliteTuning();
+    _vfoExitPending = true;
+    _freqModeStopTimer?.cancel();
     freqModeSetPar(const RadioFreqModePar.stop());
+    _freqModeStopTimer = Timer(freqModeStopRepeatDelay, () {
+      _freqModeStopTimer = null;
+      if (_transport == null) return;
+      freqModeSetPar(const RadioFreqModePar.stop());
+    });
   }
 
   /// Sets the satellite name and live look-angle shown on the radio's own
-  /// screen (SET_SATELLITE_INFO, 77). Sent immediately before each
-  /// [freqModeSetPar] update during a pass.
+  /// screen (SET_SATELLITE_INFO, 77). Updated every tracking tick even when
+  /// [freqModeSetPar] is deferred or skipped.
   void setSatelliteInfo(RadioSatelliteInfo info) {
     _sendCommand(
       RadioCommandGroup.basic,
@@ -1987,11 +2131,7 @@ class Radio implements FirmwareRadio {
   void _sendQueuedRead() {
     final r = _readInFlight;
     if (r == null) return;
-    _sendCommand(
-      RadioCommandGroup.basic,
-      r.cmd,
-      Uint8List.fromList([r.index]),
-    );
+    _sendCommand(RadioCommandGroup.basic, r.cmd, Uint8List.fromList([r.index]));
     _readTimeoutTimer?.cancel();
     _readTimeoutTimer = Timer(_readResponseTimeout, _onReadResponseTimeout);
   }
@@ -2187,6 +2327,7 @@ class Radio implements FirmwareRadio {
     int regionId = -1,
     String? tag,
     DateTime? deadline,
+    FragmentEncodingType encoding = FragmentEncodingType.unknown,
   }) {
     if (!_allowTransmit) return 0;
 
@@ -2222,8 +2363,17 @@ class Radio implements FirmwareRadio {
       t,
       fragmentChannelName,
     );
+    fragment.encoding = encoding;
 
     final String softwareMode = _activeSoftwareModemModeFor(fragment);
+    if (!_loopbackMode &&
+        softwareMode.isNotEmpty &&
+        !(_broker.getValue<bool>(deviceId, 'AudioState', false) ?? false)) {
+      _broker.logError(
+        '[Radio $deviceId] Cannot transmit $softwareMode reply: audio is disabled',
+      );
+      return 0;
+    }
 
     if (_loopbackMode) {
       _transmitLoopback(
@@ -2285,6 +2435,24 @@ class Radio implements FirmwareRadio {
   /// the wrong frequency, so we fall back to the hardware TNC, which targets the
   /// correct channel.
   String _activeSoftwareModemModeFor(TncDataFragment fragment) {
+    // Connected-mode replies must not be re-encoded by a different modem just
+    // because it is selected globally (e.g. hardware AX.25 while XARA is on).
+    switch (fragment.encoding) {
+      case FragmentEncodingType.hardwareAfsk1200:
+        return '';
+      case FragmentEncodingType.softwareAfsk1200:
+        return 'AFSK1200';
+      case FragmentEncodingType.softwarePsk2400:
+        return 'PSK2400';
+      case FragmentEncodingType.softwareDart:
+        return 'DART';
+      case FragmentEncodingType.softwareXara:
+        return 'XARA';
+      case FragmentEncodingType.unknown:
+      case FragmentEncodingType.loopback:
+        break;
+    }
+
     // A per-usage lock (Terminal / Winlink) may carry a modem override that
     // applies for the duration of the lock without changing the user's global
     // setting. 'Hardware' forces the radio's built-in TNC (software modem off);
@@ -2303,11 +2471,13 @@ class Radio implements FirmwareRadio {
     if (!audioOn) return '';
 
     final int aprsId = _aprsChannelId();
-    final bool isAprs = fragment.channelName == AprsChannel.channelName ||
+    final bool isAprs =
+        fragment.channelName == AprsChannel.channelName ||
         (aprsId >= 0 && fragment.channelId == aprsId);
     if (isAprs) {
       final String aprsMode =
-          _broker.getValue<String>(0, 'AprsSoftwareModemMode', 'None') ?? 'None';
+          _broker.getValue<String>(0, 'AprsSoftwareModemMode', 'None') ??
+          'None';
       if (aprsMode.isEmpty || aprsMode.toLowerCase() == 'none') return '';
       // Only use the software AFSK 1200 modem when VFO A is the APRS channel,
       // otherwise the audio would be transmitted on the wrong frequency. Fall
@@ -2352,6 +2522,8 @@ class Radio implements FirmwareRadio {
         return FragmentEncodingType.softwarePsk2400;
       case 'DART':
         return FragmentEncodingType.softwareDart;
+      case 'XARA':
+        return FragmentEncodingType.softwareXara;
       default:
         return FragmentEncodingType.unknown;
     }
@@ -2365,7 +2537,9 @@ class Radio implements FirmwareRadio {
     fragment.encoding = _softwareEncodingFor(mode);
     // DART carries its own LDPC FEC and CRC; the AFSK/PSK modems apply FX.25
     // (falling back to plain AX.25 for frames too large for any FX.25 block).
-    fragment.frameType = fragment.encoding == FragmentEncodingType.softwareDart
+    fragment.frameType =
+        fragment.encoding == FragmentEncodingType.softwareDart ||
+            fragment.encoding == FragmentEncodingType.softwareXara
         ? FragmentFrameType.ax25
         : FragmentFrameType.fx25;
 
@@ -3190,7 +3364,8 @@ class Radio implements FirmwareRadio {
 
   void _handleHtStatus(Uint8List data) {
     final previous = htStatus;
-    htStatus = RadioHtStatus.fromBytes(data);
+    _htStatusRadioRaw = data;
+    htStatus = RadioHtStatus.fromBytes(_patchStaleVfoChannel(data));
     if (htStatus != null) {
       _dispatch('HtStatus', htStatus!.toJson());
       _updateTxStallWatchdog(previous, htStatus!);
@@ -3227,14 +3402,21 @@ class Radio implements FirmwareRadio {
   void _handleFreqModeStatusChanged(Uint8List data) {
     if (data.length < 19) return;
     final active = data[18] != 0;
+    final wasActive = _freqModeWasActive;
+    _freqModeWasActive = active;
     _dispatch('FreqModeActive', active);
     if (active) {
+      _vfoExitPending = false;
       final freqHz = RadioUtils.getInt(data, 5) & 0x3FFFFFFF;
       if (freqHz > 0) {
         _dispatch('FreqModeFreq', freqHz);
       }
     } else {
       _dispatch('FreqModeFreq', 0);
+      // Leaving frequency mode does not push htStatusChanged; correct the
+      // stale 254+ channel id the radio reported while in VFO mode.
+      if (wasActive) _vfoExitPending = true;
+      _fixStaleVfoChannel();
     }
   }
 
@@ -3250,6 +3432,16 @@ class Radio implements FirmwareRadio {
     final channel = RadioChannelInfo.fromBytes(data);
     // Advance the serialized read queue now that this channel's reply arrived.
     _onReadReplyReceived(RadioBasicCommand.readRfCh, channel.channelId);
+    _storeChannel(channel);
+  }
+
+  void _storeChannel(RadioChannelInfo channel) {
+    if (channels != null && channel.channelId >= channels!.length) {
+      _broker.logError(
+        '[Radio $deviceId] Channel id ${channel.channelId} is out of range',
+      );
+      return;
+    }
     if (channels != null && channel.channelId < channels!.length) {
       channels![channel.channelId] = channel;
       _dispatch('Channel_${channel.channelId}', channel.toJson());
@@ -3281,11 +3473,7 @@ class Radio implements FirmwareRadio {
     if (region < 0 || region >= regionNames.length) return;
     final name = RadioUtils.decodeGbkTrimmed(data, 6, data.length - 6);
     regionNames[region] = name;
-    _dispatch(
-      'RegionNames',
-      List<String?>.from(regionNames),
-      store: true,
-    );
+    _dispatch('RegionNames', List<String?>.from(regionNames), store: true);
   }
 
   void _handleBssSettings(Uint8List data) {
@@ -3316,18 +3504,12 @@ class Radio implements FirmwareRadio {
   ///                A zero edge terminates the list (trailing bytes are padding).
   ///
   /// Example body `40 6C 40 88 80 88 00 AE 01 2C 02 26 81 90 02 08 40 00 00 00`
-  /// decodes to 108-136, 136-174, 300-550 and 400-520 MHz. The raw bytes are
-  /// logged and the parsed bands dispatched as `FreqRanges` (a list of
+  /// decodes to 108-136, 136-174, 300-550 and 400-520 MHz. The parsed bands
+  /// are dispatched as `FreqRanges` (a list of
   /// `{lowHz, highHz, mod}` maps, `mod`: FM=0, AM=1, DMR=2); the raw reply is
   /// dispatched as `FreqRangesRaw`.
   void _handleReadFreqRange(Uint8List data) {
     if (data.length < 5 || data[4] != 0) return;
-    final body = Uint8List.fromList(data.sublist(5));
-    _broker.logInfo(
-      '[Radio $deviceId] READ_FREQ_RANGE reply (${body.length} bytes): '
-      '${RadioUtils.bytesToHex(body)}',
-    );
-
     final ranges = <List<int>>[];
     for (int p = 5; p + 3 < data.length; p += 4) {
       final lowRaw = RadioUtils.getShort(data, p);
@@ -3342,9 +3524,7 @@ class Radio implements FirmwareRadio {
     freqRanges = ranges.map((r) => [r[0], r[1]]).toList();
     _dispatch(
       'FreqRanges',
-      ranges
-          .map((r) => {'lowHz': r[0], 'highHz': r[1], 'mod': r[2]})
-          .toList(),
+      ranges.map((r) => {'lowHz': r[0], 'highHz': r[1], 'mod': r[2]}).toList(),
     );
     _dispatch('FreqRangesRaw', RadioUtils.bytesToHex(data));
   }
@@ -3418,7 +3598,16 @@ class Radio implements FirmwareRadio {
         _handleHtStatusChanged(data);
         break;
       case RadioNotification.htChChanged:
-        // Channel changed - request fresh settings
+        // Inline channel data has the same offsets as a READ_RF_CH reply.
+        // An unsolicited event must not advance the serialized read queue.
+        if (data.length >= 30) {
+          _storeChannel(RadioChannelInfo.fromBytes(data));
+        } else {
+          _broker.logError(
+            '[Radio $deviceId] Truncated htChChanged notification: '
+            '${RadioUtils.bytesToHex(data)}',
+          );
+        }
         _sendCommand(
           RadioCommandGroup.basic,
           RadioBasicCommand.readSettings,
@@ -3459,7 +3648,8 @@ class Radio implements FirmwareRadio {
   void _handleHtStatusChanged(Uint8List data) {
     final previous = htStatus;
     final oldRegion = previous?.currRegion ?? -1;
-    htStatus = RadioHtStatus.fromBytes(data);
+    _htStatusRadioRaw = data;
+    htStatus = RadioHtStatus.fromBytes(_patchStaleVfoChannel(data));
     if (htStatus != null) {
       _dispatch('HtStatus', htStatus!.toJson());
       _updateTxStallWatchdog(previous, htStatus!);
@@ -3493,11 +3683,70 @@ class Radio implements FirmwareRadio {
   }
 
   void _handleSettingsChanged(Uint8List data) {
+    final previous = settings;
     settings = RadioSettings.fromBytes(data);
     if (settings != null) {
       _dispatch('Settings', settings!.toJson());
       _dispatch('SettingsRaw', base64Encode(data));
+      // A weather-mode toggle means a 254+ channel id may be genuine NOAA.
+      if (previous != null && previous.wxMode != settings!.wxMode) {
+        _vfoExitPending = false;
+      }
     }
+    // While in frequency (VFO) / satellite mode the radio reports channel id
+    // 254+ in its HT status, but it does not push htStatusChanged when it
+    // returns to channel mode (only htSettingsChanged). Correct the stale id
+    // and re-read the status so the UI is not stuck in the VFO/Weather display.
+    if (_vfoExitPending || (htStatus?.currChId ?? 0) >= 254) {
+      _fixStaleVfoChannel();
+      _scheduleHtStatusRefresh();
+    }
+  }
+
+  /// After leaving frequency mode ([_vfoExitPending]) the radio keeps
+  /// reporting channel id 254+ until it next receives a signal. Rewrites such
+  /// an HT status frame (status at offset 5) to carry settings channel A.
+  /// A frame with a real channel id ends the correction.
+  Uint8List _patchStaleVfoChannel(Uint8List data) {
+    if (!_vfoExitPending || data.length < 9) return data;
+    final status = RadioHtStatus.fromBytes(data);
+    if (status.currChId < 254) {
+      _vfoExitPending = false;
+      return data;
+    }
+    final ch = settings?.channelA;
+    if (ch == null || ch < 0 || ch >= 254) return data;
+    final patched = Uint8List.fromList(data);
+    patched[6] = (patched[6] & 0x0F) | ((ch & 0x0F) << 4);
+    patched[8] = (patched[8] & 0xC3) | (((ch >> 4) & 0x0F) << 2);
+    return patched;
+  }
+
+  /// Re-applies [_patchStaleVfoChannel] to the radio's last reported HT status
+  /// and publishes the corrected status when the channel id changed.
+  void _fixStaleVfoChannel() {
+    final current = htStatus;
+    final raw = _htStatusRadioRaw ?? current?.raw;
+    if (current == null || raw == null) return;
+    final patched = RadioHtStatus.fromBytes(_patchStaleVfoChannel(raw));
+    if (patched.currChId == current.currChId) return;
+    htStatus = patched;
+    _dispatch('HtStatus', htStatus!.toJson());
+  }
+
+  /// Requests GET_HT_STATUS after a short debounce so a burst of events
+  /// triggers a single read once the radio has settled.
+  void _scheduleHtStatusRefresh() {
+    if (_htStatusRefreshTimer != null) return;
+    _htStatusRefreshTimer = Timer(const Duration(milliseconds: 250), () {
+      _htStatusRefreshTimer = null;
+      if (_transport == null) return;
+      _sendCommand(
+        RadioCommandGroup.basic,
+        RadioBasicCommand.getHtStatus,
+        null,
+      );
+    });
   }
 
   void _handlePositionChange(Uint8List data) {
@@ -3561,13 +3810,18 @@ class Radio implements FirmwareRadio {
       //
       // APRSSat is VFO-driven (no stored channel, so lock.channelId is -1 and
       // never matches): while it holds the lock every received frame is treated
-      // as APRS, so tag all traffic with the usage regardless of channel.
+      // as APRS, so tag all traffic with the usage regardless of channel and
+      // name it 'APRS' (the stored channel name is stale) so it is routed to,
+      // persisted for and reloaded into the APRS tab.
       final lock = _lockState;
       if (lock != null &&
           lock.isLocked &&
           (_frameAccumulator!.channelId == lock.channelId ||
               lock.usage == kAprsSatLockUsage)) {
         _frameAccumulator!.usage = lock.usage;
+        if (lock.usage == kAprsSatLockUsage) {
+          _frameAccumulator!.channelName = 'APRS';
+        }
         if (_packetTrace) {
           _debug(
             "DataFrame usage set to '${lock.usage}' (channel ${lock.channelId})",
@@ -3583,10 +3837,11 @@ class Radio implements FirmwareRadio {
 
   void _handleHtSendData(Uint8List data) {
     // Fragment sent successfully
-    if (_tncFragmentQueue.isNotEmpty) {
+    if (!_tncFragmentInFlightCancelled && _tncFragmentQueue.isNotEmpty) {
       _tncFragmentQueue.removeAt(0);
     }
     _tncFragmentInFlight = false;
+    _tncFragmentInFlightCancelled = false;
     _clearTransmitQueue();
     _trySendNextFragment();
   }

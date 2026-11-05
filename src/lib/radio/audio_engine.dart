@@ -12,10 +12,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart'
-    show
-        BackgroundIsolateBinaryMessenger,
-        MethodChannel,
-        RootIsolateToken;
+    show BackgroundIsolateBinaryMessenger, MethodChannel, RootIsolateToken;
 
 import '../sbc/sbc_decoder.dart';
 import '../sbc/sbc_encoder.dart';
@@ -41,9 +38,23 @@ import '../sbc/sbc_frame.dart';
 /// calls), has changed.
 class AudioEngine {
   // Named params can't be private, so `btSend` is copied into `_btSend`.
-  AudioEngine(this._emit, {Future<void> Function(Uint8List data)? btSend})
-      // ignore: prefer_initializing_formals
-      : _btSend = btSend;
+  AudioEngine(
+    this._emit, {
+    Future<void> Function(Uint8List data)? btSend,
+    int Function()? clockMs,
+  })
+    // ignore: prefer_initializing_formals
+    : _btSend = btSend,
+       _clockMs = clockMs ?? _monotonicMs;
+
+  static final Stopwatch _monotonic = Stopwatch()..start();
+  static int _monotonicMs() => _monotonic.elapsedMilliseconds;
+
+  /// Monotonic millisecond clock (injectable for tests).
+  final int Function() _clockMs;
+
+  /// Report receive runs with at least this much observed audio shortfall.
+  static const int _rxLossReportMs = 250;
 
   /// Audio format: 32 kHz, 16-bit, mono (matches the radio's SBC stream).
   static const int _sampleRate = 32000;
@@ -53,6 +64,7 @@ class AudioEngine {
 
   /// PCM bytes consumed per encoded SBC frame: blocks * subbands * 2 (16-bit).
   static const int _pcmInputSizePerFrame = 16 * 8 * 2; // 256 bytes
+  static const int _maxSbcPacketBytes = 300;
 
   /// Receive pre-roll depth (ms of audio). At the start of each received audio
   /// run the first [_rxPrerollMs] of decoded PCM is held and then released to
@@ -77,9 +89,8 @@ class AudioEngine {
   /// Live voice PTT keeps a short lead to stay low-latency. Bulk pre-computed
   /// transmissions (SSTV image, DART data) use a much deeper lead since their
   /// latency doesn't matter. The effective depth is still bounded by the OS /
-  /// radio Bluetooth buffering and RFCOMM flow control, so a large value simply
-  /// fills those as deep as they allow (it never sends faster than the link
-  /// accepts). Tunable if a radio needs more or less headroom.
+  /// radio Bluetooth buffering and RFCOMM flow control; successful writes do
+  /// not establish that the radio's audio buffer has enough capacity.
   static const int _txLeadMsVoice = 1000;
   static const int _txLeadMsBulk = 10000;
 
@@ -90,13 +101,36 @@ class AudioEngine {
   /// instead of waiting for a deep buffer to drain.
   static const int _txLeadMsBulkVoice = 2000;
 
+  /// Pre-computed, corruption-sensitive audio that must stay cancellable from
+  /// the UI (SSTV images). A stall longer than the lead tears the image, so it
+  /// gets a deep cushion, while staying shorter than [_txLeadMsBulk] so Cancel
+  /// still stops the transmission within a few seconds.
+  static const int _txLeadMsBulkData = 6000;
+
+  /// Encoded SBC packets coalesced into one Bluetooth write (~24 ms of audio
+  /// each). Each write is a platform-channel round trip (and on Android a
+  /// native thread hop), so batching cuts per-packet overhead that otherwise
+  /// lets slower devices fall behind real time. Every packet keeps its own
+  /// 0x7e framing, so the radio sees the same byte stream.
+  static const int _txPacketsPerWrite = 4;
+
   /// A single transmit chunk at least this large (~2 s of 32 kHz/16-bit mono) is
   /// treated as a bulk, pre-computed transmission and gets the deep pacing lead.
   static const int _bulkChunkThresholdBytes = _sampleRate * 2 * 2;
 
   /// Frame that tells the radio to stop transmitting.
   static final Uint8List _endAudioFrame = Uint8List.fromList(<int>[
-    0x7e, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e,
+    0x7e,
+    0x01,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x7e,
   ]);
 
   /// Sends an event message to the host isolate.
@@ -132,6 +166,21 @@ class AudioEngine {
   int _rxPrerollSampleCount = 0;
   bool _rxPrerollFlushed = false;
 
+  // Receive-run continuity statistics describe delivery to this isolate, not
+  // where any missing audio was lost.
+  int _rxRunFirstMs = 0;
+  int _rxRunLastMs = 0;
+  int _rxRunSamples = 0;
+  int _rxRunAudioUs = 0;
+  int _rxRunPackets = 0;
+  int _rxRunPayloadBytes = 0;
+  int _rxRunDecodedFrames = 0;
+  int _rxRunDecodeErrors = 0;
+  int _rxRunRejectedBytes = 0;
+  final Set<String> _rxRunFormats = <String>{};
+  int _rxRunMaxGapMs = 0;
+  int _rxRunMaxGapAtMs = 0;
+
   // Radio state pushed from the host (updated on HtStatus changes).
   String _channelName = '';
   bool _muteChannel = false;
@@ -146,10 +195,8 @@ class AudioEngine {
     ..mode = SbcMode.mono
     ..allocationMethod = SbcBitAllocationMethod.loudness
     ..subbands = 8
-    // Experimental: raised from the radio's default 18 to test whether the
-    // firmware accepts a higher-quality SBC stream. Confirmed working at 40
-    // over the air; 124 (the codec max) was rejected.
-    ..bitpool = 40;
+    // Keep the radio's stock bitrate so Bluetooth can sustain real-time audio.
+    ..bitpool = 18;
 
   // --- Transmit state ---
   final Queue<Uint8List> _pcmQueue = Queue<Uint8List>();
@@ -157,6 +204,7 @@ class AudioEngine {
   bool _voiceTransmitCancel = false;
   bool _playInputBack = false;
   bool _voiceTransmitIsDataFrame = false;
+  bool _voiceTransmitIsBulkData = false;
   bool _voiceTransmitHold = false;
   Uint8List? _reminderTransmitPcm;
   Completer<void>? _newDataSignal;
@@ -222,10 +270,17 @@ class AudioEngine {
         final bool playLocally = (msg['playLocally'] as bool?) ?? false;
         final bool? hold = msg['hold'] as bool?;
         final bool isDataFrame = (msg['isDataFrame'] as bool?) ?? false;
+        final bool isBulkData = (msg['isBulkData'] as bool?) ?? false;
         if (hold != null) _voiceTransmitHold = hold;
         if (pcm != null && pcm.isNotEmpty) {
-          transmitVoice(pcm, 0, pcm.length, playLocally,
-              isDataFrame: isDataFrame);
+          transmitVoice(
+            pcm,
+            0,
+            pcm.length,
+            playLocally,
+            isDataFrame: isDataFrame,
+            isBulkData: isBulkData,
+          );
         }
         break;
       case 'txHold':
@@ -280,7 +335,9 @@ class AudioEngine {
   void _emitPlay(Int16List pcm) {
     _emit(<String, Object?>{
       'evt': 'play',
-      'pcm': _wrap(pcm.buffer.asUint8List(pcm.offsetInBytes, pcm.lengthInBytes)),
+      'pcm': _wrap(
+        pcm.buffer.asUint8List(pcm.offsetInBytes, pcm.lengthInBytes),
+      ),
     });
   }
 
@@ -362,7 +419,8 @@ class AudioEngine {
 
         // Pace to real time, staying [_monitorLeadMs] ahead of the wall clock.
         final int targetMs = (emittedSamples * 1000) ~/ _sampleRate;
-        final int waitMs = targetMs - stopwatch.elapsedMilliseconds - _monitorLeadMs;
+        final int waitMs =
+            targetMs - stopwatch.elapsedMilliseconds - _monitorLeadMs;
         if (waitMs > 0) {
           await Future<void>.delayed(
             Duration(milliseconds: waitMs < 100 ? waitMs : 100),
@@ -395,27 +453,57 @@ class AudioEngine {
       switch (uframe[0]) {
         case 0x00: // Received audio (odd)
         case 0x03: // Received audio
-          if (_inAudioRun && _inAudioRunIsTransmit) return;
+          if (_inAudioRun && _inAudioRunIsTransmit) {
+            if (_isTransmitting) continue;
+            // A late TX echo can outlive its end marker; RX identifies the new run.
+            _log('RX audio resumed after transmit echo without an end marker.');
+            _dispatchAudioDataEnd();
+            _inAudioRun = false;
+          }
+          final int nowMs = _clockMs();
           if (!_inAudioRun) {
             _inAudioRun = true;
             _inAudioRunIsTransmit = false;
             _resetRxPreroll();
+            _rxRunFirstMs = nowMs;
+            _rxRunLastMs = nowMs;
+            _rxRunSamples = 0;
+            _rxRunAudioUs = 0;
+            _rxRunPackets = 0;
+            _rxRunPayloadBytes = 0;
+            _rxRunDecodedFrames = 0;
+            _rxRunDecodeErrors = 0;
+            _rxRunRejectedBytes = 0;
+            _rxRunFormats.clear();
+            _rxRunMaxGapMs = 0;
+            _rxRunMaxGapAtMs = 0;
             _dispatchAudioDataStart(false);
           }
+          final int gapMs = nowMs - _rxRunLastMs;
+          if (gapMs > _rxRunMaxGapMs) {
+            _rxRunMaxGapMs = gapMs;
+            _rxRunMaxGapAtMs = _rxRunLastMs - _rxRunFirstMs;
+          }
+          _rxRunLastMs = nowMs;
+          _rxRunPackets++;
+          _rxRunPayloadBytes += uframe.length - 1;
           _decodeSbcFrame(uframe, 1, uframe.length - 1, false);
           break;
         case 0x01: // Audio end
           if (_inAudioRun) {
             _inAudioRun = false;
             // Release any pre-roll not yet flushed so short bursts still play.
-            if (!_inAudioRunIsTransmit) _flushRxPreroll();
+            if (!_inAudioRunIsTransmit) {
+              _flushRxPreroll();
+              _reportRxRunLoss();
+            }
             _dispatchAudioDataEnd();
           }
           break;
         case 0x02: // Audio ACK
           break;
         case 0x09: // Transmit audio (echo) - decoded for metering, not played
-          if (_inAudioRun && !_inAudioRunIsTransmit) return;
+          if (_inAudioRun && !_inAudioRunIsTransmit) continue;
           if (!_inAudioRun) {
             _inAudioRun = true;
             _inAudioRunIsTransmit = true;
@@ -516,26 +604,40 @@ class AudioEngine {
   ) {
     if (sbcFrame.isEmpty) return;
 
+    int remaining = length;
     try {
       int offset = start;
-      int remaining = length;
       final List<int> samples = <int>[];
+      String? rejection;
 
       while (remaining > 0) {
         // SBC frames start with 0x9C, mSBC with 0xAD.
         final int syncByte = sbcFrame[offset];
-        if (syncByte != 0x9C && syncByte != 0xAD) break;
+        if (syncByte != 0x9C && syncByte != 0xAD) {
+          rejection = 'invalid sync byte 0x${syncByte.toRadixString(16)}';
+          break;
+        }
 
-        if (remaining < SbcFrame.headerSize) break;
+        if (remaining < SbcFrame.headerSize) {
+          rejection = 'truncated header';
+          break;
+        }
         final Uint8List header = Uint8List.sublistView(
           sbcFrame,
           offset,
           offset + SbcFrame.headerSize,
         );
         final SbcFrame? probed = _sbcDecoder.probe(header);
-        if (probed == null) break;
+        if (probed == null) {
+          rejection = 'invalid header';
+          break;
+        }
         final int frameSize = probed.getFrameSize();
-        if (frameSize <= 0 || frameSize > remaining) break;
+        if (frameSize <= 0 || frameSize > remaining) {
+          rejection =
+              'invalid/truncated frame: size=$frameSize, available=$remaining';
+          break;
+        }
 
         final Uint8List sbcData = Uint8List.sublistView(
           sbcFrame,
@@ -543,15 +645,34 @@ class AudioEngine {
           offset + frameSize,
         );
         final result = _sbcDecoder.decode(sbcData);
-        if (!result.success) break;
-        if (result.frame.getFrameSize() != frameSize) break;
+        if (!result.success) {
+          rejection = 'CRC or frame decode failure';
+          break;
+        }
+        if (result.frame.getFrameSize() != frameSize) {
+          rejection = 'decoded frame size mismatch';
+          break;
+        }
 
         samples.addAll(result.pcmLeft);
+        if (!isTransmit) {
+          _rxRunSamples += result.pcmLeft.length;
+          _rxRunAudioUs +=
+              result.pcmLeft.length * 1000000 ~/ result.frame.getFrequencyHz();
+          _rxRunDecodedFrames++;
+          _rxRunFormats.add(
+            '${result.frame.getFrequencyHz()}Hz/${result.frame.mode.name}'
+            '/bitpool=${result.frame.bitpool}',
+          );
+        }
 
         offset += frameSize;
         remaining -= frameSize;
       }
 
+      if (rejection != null) {
+        _reportSbcDecodeFailure(rejection, remaining, isTransmit);
+      }
       if (samples.isEmpty) return;
 
       // Audio on a muted channel is neither played on the speaker nor recorded,
@@ -584,8 +705,42 @@ class AudioEngine {
       final double amplitude = _calculatePcmAmplitude(samples) * _outputVolume;
       _emit(<String, Object?>{'evt': 'amplitude', 'value': amplitude});
     } catch (e) {
-      _log('SBC decode error: $e');
+      _reportSbcDecodeFailure('exception: $e', remaining, isTransmit);
     }
+  }
+
+  void _reportSbcDecodeFailure(
+    String reason,
+    int rejectedBytes,
+    bool isTransmit,
+  ) {
+    if (!isTransmit) {
+      _rxRunDecodeErrors++;
+      _rxRunRejectedBytes += rejectedBytes;
+    }
+    _log(
+      'SBC decode rejected ${isTransmit ? 'TX echo' : 'RX'} payload: $reason; '
+      '$rejectedBytes bytes discarded.',
+    );
+  }
+
+  /// Compare decoded duration with packet arrival times, without attributing
+  /// gaps to the radio, Bluetooth, platform delivery, or decoder.
+  void _reportRxRunLoss() {
+    final int wallMs = _rxRunLastMs - _rxRunFirstMs;
+    final int audioMs = _rxRunAudioUs ~/ 1000;
+    final int missingMs = wallMs - audioMs;
+    if (missingMs < _rxLossReportMs) return;
+    _log(
+      'RX audio shortfall: ${missingMs}ms over ${wallMs}ms of packet arrivals '
+      '(decoded ${audioMs}ms); longest gap ${_rxRunMaxGapMs}ms at '
+      '${_rxRunMaxGapAtMs}ms into the run. '
+      'Packets=$_rxRunPackets, payloadBytes=$_rxRunPayloadBytes, '
+      'SBC frames=$_rxRunDecodedFrames, samples=$_rxRunSamples, '
+      'decodeErrors=$_rxRunDecodeErrors, rejectedBytes=$_rxRunRejectedBytes, '
+      'formats=${_rxRunFormats.join(',')}. '
+      'Arrival timing alone does not establish radio/Bluetooth packet loss.',
+    );
   }
 
   static double _calculatePcmAmplitude(List<int> samples) {
@@ -605,19 +760,24 @@ class AudioEngine {
 
   /// Queue [length] bytes of 32 kHz / 16-bit / mono PCM (starting at [offset])
   /// for transmission to the radio. When [play] is true the audio is also
-  /// played back locally as it is sent.
+  /// played back locally as it is sent. [isBulkData] marks pre-computed,
+  /// corruption-sensitive audio (SSTV) that needs a deep pacing lead.
   bool transmitVoice(
     Uint8List pcmInput,
     int offset,
     int length,
     bool play, {
     bool isDataFrame = false,
+    bool isBulkData = false,
   }) {
     _playInputBack = play;
     _voiceTransmitCancel = false;
     // The data-frame flag applies to a whole transmission run; only latch it
     // when a fresh run is about to start.
-    if (!_isTransmitting) _voiceTransmitIsDataFrame = isDataFrame;
+    if (!_isTransmitting) {
+      _voiceTransmitIsDataFrame = isDataFrame;
+      _voiceTransmitIsBulkData = isBulkData;
+    }
     _pcmQueue.add(
       Uint8List.fromList(
         Uint8List.sublistView(pcmInput, offset, offset + length),
@@ -636,7 +796,7 @@ class AudioEngine {
     _signalNewData();
     _pcmQueue.clear();
     _reminderTransmitPcm = null;
-    _sendAudio(_endAudioFrame);
+    unawaited(_sendEndAudio());
   }
 
   void _signalNewData() {
@@ -671,19 +831,27 @@ class AudioEngine {
       }
     } catch (e) {
       _log('Voice transmit error: $e');
+      _pcmQueue.clear();
     } finally {
       if (_inAudioRun && _inAudioRunIsTransmit) {
         _inAudioRun = false;
         _dispatchAudioDataEnd();
       }
       _reminderTransmitPcm = null;
-      await _sendAudio(_endAudioFrame);
+      await _sendEndAudio();
       _dispatchVoiceTransmitStateChanged(false);
       _isTransmitting = false;
     }
   }
 
   Future<void> _processPcmData(Uint8List incoming) async {
+    if (_inAudioRun && !_inAudioRunIsTransmit) {
+      _log('TX started before received audio end marker; closing receive run.');
+      _flushRxPreroll();
+      _reportRxRunLoss();
+      _dispatchAudioDataEnd();
+      _inAudioRun = false;
+    }
     if (!_inAudioRun) {
       _inAudioRun = true;
       _inAudioRunIsTransmit = true;
@@ -716,6 +884,8 @@ class AudioEngine {
     final int txLeadMs;
     if (_voiceTransmitIsDataFrame) {
       txLeadMs = _txLeadMsBulk;
+    } else if (_voiceTransmitIsBulkData) {
+      txLeadMs = _txLeadMsBulkData;
     } else if (pcmLength >= _bulkChunkThresholdBytes) {
       txLeadMs = _txLeadMsBulkVoice;
     } else {
@@ -723,6 +893,14 @@ class AudioEngine {
     }
     final Stopwatch stopwatch = Stopwatch()..start();
     int totalBytesSent = 0;
+    int wireBytes = 0;
+    int writes = 0;
+    int maxWriteMs = 0;
+    int maxBehindMs = 0;
+
+    BytesBuilder batch = BytesBuilder(copy: false);
+    int batchPackets = 0;
+    int batchPcmStart = pcmOffset;
 
     while (pcmLength >= _pcmInputSizePerFrame && !_voiceTransmitCancel) {
       final (Uint8List? encoded, int bytesConsumed) = _encodeSbcFrames(
@@ -730,15 +908,36 @@ class AudioEngine {
         pcmOffset,
         pcmLength,
       );
-      if (encoded == null || bytesConsumed <= 0) break;
+      if (encoded == null || bytesConsumed <= 0) {
+        throw StateError(
+          'SBC encoding failed with $pcmLength PCM bytes remaining',
+        );
+      }
 
-      await _sendAudio(_escapeBytes(0, encoded));
+      batch.add(_escapeBytes(0, encoded));
+      batchPackets++;
+      pcmOffset += bytesConsumed;
+      pcmLength -= bytesConsumed;
 
-      // Record / play back / report the PCM that was just consumed.
+      if (batchPackets < _txPacketsPerWrite &&
+          pcmLength >= _pcmInputSizePerFrame) {
+        continue;
+      }
+
+      final Uint8List packets = batch.takeBytes();
+      final Stopwatch writeWatch = Stopwatch()..start();
+      await _sendAudio(packets);
+      if (writeWatch.elapsedMilliseconds > maxWriteMs) {
+        maxWriteMs = writeWatch.elapsedMilliseconds;
+      }
+      wireBytes += packets.length;
+      writes++;
+
+      // Record / play back / report the PCM that was just sent.
       final Uint8List consumed = Uint8List.sublistView(
         pcmData,
+        batchPcmStart,
         pcmOffset,
-        pcmOffset + bytesConsumed,
       );
       _recorder?.write(_int16ListFromBytes(consumed));
       if (_playInputBack && !_isMuted) {
@@ -748,14 +947,22 @@ class AudioEngine {
       }
       _dispatchAudioDataAvailable(
         Uint8List.fromList(consumed),
-        bytesConsumed,
+        consumed.length,
         true,
         false,
       );
+      totalBytesSent += consumed.length;
+      batch = BytesBuilder(copy: false);
+      batchPackets = 0;
+      batchPcmStart = pcmOffset;
 
-      pcmOffset += bytesConsumed;
-      pcmLength -= bytesConsumed;
-      totalBytesSent += bytesConsumed;
+      // How far the radio's playout clock is ahead of what has been delivered.
+      // Positive values mean the radio may have run dry (an audible gap / torn
+      // image), which is what the lead is meant to prevent.
+      final int behindMs =
+          stopwatch.elapsedMilliseconds -
+          (totalBytesSent * 1000) ~/ bytesPerSecond;
+      if (behindMs > maxBehindMs) maxBehindMs = behindMs;
 
       // Allow the transmit buffer to run up to txLeadMs ahead of real time,
       // then throttle so we never outpace the radio's playout.
@@ -767,6 +974,16 @@ class AudioEngine {
           Duration(milliseconds: waitMs < 100 ? waitMs : 100),
         );
       }
+    }
+
+    if (_voiceTransmitIsDataFrame || _voiceTransmitIsBulkData) {
+      _log(
+        'TX audio: bitpool=${_encoderFrame.bitpool}, lead=${txLeadMs}ms, '
+        'audio=${totalBytesSent * 1000 ~/ bytesPerSecond}ms, '
+        'elapsed=${stopwatch.elapsedMilliseconds}ms, '
+        'writes=$writes, maxWrite=${maxWriteMs}ms, '
+        'maxBehind=${maxBehindMs}ms, wireBytes=$wireBytes',
+      );
     }
 
     // Keep any trailing partial frame for the next chunk.
@@ -802,7 +1019,9 @@ class AudioEngine {
     int totalBytesConsumed = 0;
     final BytesBuilder builder = BytesBuilder(copy: false);
 
-    while (totalToConsume >= _pcmInputSizePerFrame && totalGenerated < 300) {
+    final int sbcFrameSize = _encoderFrame.getFrameSize();
+    while (totalToConsume >= _pcmInputSizePerFrame &&
+        totalGenerated + sbcFrameSize <= _maxSbcPacketBytes) {
       final Int16List pcmSamples = _int16ListFromBytes(
         Uint8List.sublistView(
           pcmData,
@@ -862,6 +1081,14 @@ class AudioEngine {
       await btSend(data);
     } else {
       _emit(<String, Object?>{'evt': 'send', 'bytes': _wrap(data)});
+    }
+  }
+
+  Future<void> _sendEndAudio() async {
+    try {
+      await _sendAudio(_endAudioFrame);
+    } catch (e) {
+      _log('Voice transmit stop error: $e');
     }
   }
 
@@ -954,10 +1181,12 @@ class AudioEngine {
 /// `audioStart`, `audioEnd`, `audioData`, `amplitude`, `txState`.
 Future<void> audioEngineIsolateEntry(List<Object?> initialMessage) async {
   final SendPort hostPort = initialMessage[0] as SendPort;
-  final RootIsolateToken? rootToken =
-      initialMessage.length > 1 ? initialMessage[1] as RootIsolateToken? : null;
-  final String macAddress =
-      initialMessage.length > 2 ? (initialMessage[2] as String? ?? '') : '';
+  final RootIsolateToken? rootToken = initialMessage.length > 1
+      ? initialMessage[1] as RootIsolateToken?
+      : null;
+  final String macAddress = initialMessage.length > 2
+      ? (initialMessage[2] as String? ?? '')
+      : '';
 
   // Enable platform-channel *sends* from this background isolate so paced
   // Bluetooth transmit writes don't have to hop through the (possibly busy)
@@ -966,19 +1195,22 @@ Future<void> audioEngineIsolateEntry(List<Object?> initialMessage) async {
   Future<void> Function(Uint8List data)? btSend;
   if (rootToken != null && macAddress.isNotEmpty) {
     BackgroundIsolateBinaryMessenger.ensureInitialized(rootToken);
-    const MethodChannel btChannel =
-        MethodChannel('com.htcommander/bluetooth_classic');
+    // Android serves transmit writes on a background task queue (a dedicated
+    // channel) so they never queue behind work on the Android UI thread.
+    final MethodChannel btChannel = MethodChannel(
+      Platform.isAndroid
+          ? 'com.htcommander/bluetooth_classic_audio_tx'
+          : 'com.htcommander/bluetooth_classic',
+    );
     btSend = (Uint8List data) async {
-      try {
-        await btChannel.invokeMethod<bool>('sendAudio', <String, Object?>{
-          'address': macAddress,
-          'data': data,
-        });
-      } catch (e) {
-        hostPort.send(<String, Object?>{
-          'evt': 'log',
-          'msg': 'AudioEngine Bluetooth sendAudio error: $e',
-        });
+      final bool? sent = await btChannel.invokeMethod<bool>(
+        'sendAudio',
+        <String, Object?>{'address': macAddress, 'data': data},
+      );
+      if (sent != true) {
+        throw StateError(
+          'Bluetooth sendAudio rejected ${data.length} bytes for $macAddress',
+        );
       }
     };
   }

@@ -78,6 +78,10 @@ class SatelliteHandler {
   // not run an SGP4 pass search every tick. Recomputed once it elapses.
   DateTime? _trackNextAosUtc;
 
+  // Cached end of the in-progress pass (LOS) for the tracked bird; cleared
+  // once the bird drops below the horizon.
+  DateTime? _trackLosUtc;
+
   // Latest valid GPS fix reported by each connected radio (device id > 0).
   final Map<int, RadioPosition> _radioFixes = {};
 
@@ -243,12 +247,14 @@ class SatelliteHandler {
       _trackNoradId = norad;
       _trackUsageIndex = (data['usageIndex'] as num?)?.toInt() ?? 0;
       _trackNextAosUtc = null; // force a fresh next-pass computation
+      _trackLosUtc = null;
       _sendTrackUpdate(); // push immediately so the radio tunes without delay
     } else {
       _trackRadioDeviceId = null;
       _trackNoradId = null;
       _trackUsageIndex = 0;
       _trackNextAosUtc = null;
+      _trackLosUtc = null;
     }
   }
 
@@ -434,11 +440,18 @@ class SatelliteHandler {
         // usages replace the online/seed data. The orbit comes from the stored
         // TLE when pinned or when the bird isn't in the online catalog;
         // otherwise the live TLE keeps its elements up to date.
-        final tle = (_userStore.isOrbitPinned(noradId) || liveTle == null)
+        final tle =
+            (override.isStatic ||
+                _userStore.isOrbitPinned(noradId) ||
+                liveTle == null)
             ? override.tle
             : liveTle;
         final usages = _orderUsages(override.transponders);
-        _catalog[noradId] = SatelliteInfo(tle: tle, transponders: usages);
+        _catalog[noradId] = SatelliteInfo(
+          tle: tle,
+          transponders: usages,
+          isStatic: override.isStatic,
+        );
         continue;
       }
 
@@ -464,6 +477,7 @@ class SatelliteHandler {
     final observer = _observer;
     if (observer == null) return;
     for (final info in _catalog.values) {
+      if (info.isStatic) continue;
       try {
         final elements = so.GpElements.fromTle(
           info.tle.line1,
@@ -509,7 +523,7 @@ class SatelliteHandler {
     if (mLat != null && mLon != null && (mLat != 0 || mLon != 0)) {
       lat = mLat.toDouble();
       lon = mLon.toDouble();
-      altM = (_broker.getValue<num>(_settingsDeviceId, 'SatObserverAltM', 0) ?? 0)
+        altM = (_broker.getValue<num>(_settingsDeviceId, 'SatObserverAltM', 0) ?? 0)
           .toDouble();
     } else {
       final gps = _broker.getValue<GpsData>(_gpsDeviceId, 'GpsData', null);
@@ -580,9 +594,12 @@ class SatelliteHandler {
   }
 
   void _computeAndPublishPositions() {
-    if (_disposed || _observers.isEmpty) return;
+    if (_disposed) return;
     final now = DateTime.now().toUtc();
-    final positions = <SatellitePosition>[];
+    final positions = <SatellitePosition>[
+      for (final info in _catalog.values)
+        if (info.isStatic) info.staticPosition(now),
+    ];
     for (final entry in _observers.entries) {
       final info = _catalog[entry.key];
       if (info == null) continue;
@@ -630,13 +647,38 @@ class SatelliteHandler {
     if (radioId == null || norad == null) return;
     final observer = _observers[norad];
     final info = _catalog[norad];
-    if (observer == null || info == null) return;
+    if (info == null || (!info.isStatic && observer == null)) return;
     if (_trackUsageIndex < 0 || _trackUsageIndex >= info.transponders.length) {
       return;
     }
     final usage = info.transponders[_trackUsageIndex];
 
     final now = DateTime.now().toUtc();
+    if (info.isStatic) {
+      final rx = usage.downlinkHz;
+      if (rx == null) return;
+      final position = info.staticPosition(now);
+      _broker.dispatch(
+        deviceId: radioId,
+        name: 'SatelliteTrackUpdate',
+        data: SatelliteTrackParams(
+          noradId: norad,
+          usageIndex: _trackUsageIndex,
+          name: info.name,
+          rxFreqHz: rx,
+          txFreqHz: usage.uplinkHz ?? 0,
+          txCtcssHz: usage.ctcssHz,
+          azimuthDeg: position.azimuthDeg,
+          elevationDeg: position.elevationDeg,
+          rangeKm: position.rangeKm,
+          altitudeKm: position.altitudeKm,
+          secondsToNextPass: 0,
+        ),
+        store: false,
+      );
+      return;
+    }
+    if (observer == null) return;
     final so.LookAngle look;
     double altitudeKm;
     try {
@@ -658,10 +700,18 @@ class SatelliteHandler {
     // app sends 0, so match that; otherwise count down to the next AOS. The AOS
     // instant is cached and only re-searched once it has elapsed.
     int secondsToNextPass;
+    var secondsToLos = 0;
     if (look.elevationDeg > 0) {
       secondsToNextPass = 0;
       _trackNextAosUtc = null; // recompute after the pass ends
+      if (_trackLosUtc == null || !now.isBefore(_trackLosUtc!)) {
+        _trackLosUtc = _findLos(observer, now);
+      }
+      final los = _trackLosUtc;
+      secondsToLos =
+          los == null ? 0 : los.difference(now).inSeconds.clamp(0, 0xFFFF);
     } else {
+      _trackLosUtc = null;
       if (_trackNextAosUtc == null || !now.isBefore(_trackNextAosUtc!)) {
         try {
           _trackNextAosUtc = observer
@@ -673,7 +723,7 @@ class SatelliteHandler {
         }
       }
       final aos = _trackNextAosUtc;
-      secondsToNextPass =
+        secondsToNextPass =
           aos == null ? 0 : aos.difference(now).inSeconds.clamp(0, 0xFFFF);
     }
 
@@ -681,6 +731,8 @@ class SatelliteHandler {
       deviceId: radioId,
       name: 'SatelliteTrackUpdate',
       data: SatelliteTrackParams(
+        noradId: norad,
+        usageIndex: _trackUsageIndex,
         name: info.name,
         rxFreqHz: rx,
         txFreqHz: tx,
@@ -690,9 +742,40 @@ class SatelliteHandler {
         rangeKm: look.rangeKm,
         altitudeKm: altitudeKm,
         secondsToNextPass: secondsToNextPass,
+        secondsToLos: secondsToLos,
       ),
       store: false,
     );
+  }
+
+  /// Finds when a bird currently above the horizon sets (elevation reaches 0),
+  /// to about a second. Coarse 15 s steps (up to 12 h for high orbits), then
+  /// bisection. Runs once per pass; the result is cached by the caller.
+  static DateTime? _findLos(so.SatelliteObserver observer, DateTime now) {
+    const step = Duration(seconds: 15);
+    var lo = now;
+    try {
+      for (var i = 0; i < 2880; i++) {
+        final hi = lo.add(step);
+        if (observer.lookAngleAt(hi).elevationDeg <= 0) {
+          var a = lo;
+          var b = hi;
+          while (b.difference(a).inMilliseconds > 1000) {
+            final mid = a.add(
+              Duration(milliseconds: b.difference(a).inMilliseconds ~/ 2),
+            );
+            if (observer.lookAngleAt(mid).elevationDeg > 0) {
+              a = mid;
+            } else {
+              b = mid;
+            }
+          }
+          return b;
+        }
+        lo = hi;
+      }
+    } catch (_) {}
+    return null;
   }
 
   void _recomputePasses() {

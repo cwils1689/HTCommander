@@ -21,7 +21,7 @@ import 'mail_store.dart';
 import 'winlink_mail.dart';
 import 'winlink_utils.dart';
 
-enum WinlinkTransportType { x25, tcp }
+enum WinlinkTransportType { x25, tcp, xara }
 
 enum WinlinkConnectionState {
   disconnected,
@@ -92,6 +92,16 @@ class WinlinkClient {
       name: 'ConnectedRadios',
       callback: _onConnectedRadios,
     );
+    _broker.subscribe(
+      deviceId: DataBroker.allDevices,
+      name: 'XaraEvent',
+      callback: _onXaraEvent,
+    );
+    _broker.subscribe(
+      deviceId: DataBroker.allDevices,
+      name: 'XaraDataReceived',
+      callback: _onXaraData,
+    );
   }
 
   late DataBrokerClient _broker;
@@ -124,6 +134,13 @@ class WinlinkClient {
   // AX25Session for X25 transport
   AX25Session? _ax25Session;
   bool _pendingDisconnect = false;
+
+  // XARA transport: lock wait, connect and disconnect watchdogs.
+  Timer? _xaraTimer;
+  Object? _xaraLevel;
+  static const Duration _xaraLockWait = Duration(seconds: 15);
+  static const Duration _xaraConnectLimit = Duration(seconds: 120);
+  static const Duration _xaraDisconnectLimit = Duration(seconds: 30);
 
   // Debug traffic history buffer (last 1000 entries)
   static const int _maxDebugHistorySize = 1000;
@@ -176,6 +193,9 @@ class WinlinkClient {
   /// radio and begins the X25 connection process.
   void _startRadioSync(int radioId, StationInfo station) {
     if (radioId <= 0) return;
+    final useXara =
+        station.terminalProtocol.isXara ||
+        station.modem.toUpperCase() == 'XARA';
 
     // Get the current region from HtStatus
     final htStatusJson = _broker.getValueDynamic(radioId, 'HtStatus');
@@ -248,7 +268,10 @@ class WinlinkClient {
       regionId: targetRegion,
       channelId: channelId,
       channelName: channelName,
-      modem: station.modem,
+      modem: useXara ? 'XARA' : station.modem,
+      xaraWide: station.terminalProtocol.isXara
+          ? station.terminalProtocol == TerminalProtocol.xaraWide
+          : null,
     );
     _broker.dispatch(
       deviceId: radioId,
@@ -257,9 +280,6 @@ class WinlinkClient {
       store: false,
     );
 
-    // Set up X25 transport
-    _transportType = WinlinkTransportType.x25;
-
     // Clear debug history for new session
     _broker.dispatch(
       deviceId: 1,
@@ -267,6 +287,15 @@ class WinlinkClient {
       data: true,
       store: false,
     );
+
+    if (useXara) {
+      _transportType = WinlinkTransportType.xara;
+      _startXara(radioId, station);
+      return;
+    }
+
+    // Set up X25 transport
+    _transportType = WinlinkTransportType.x25;
 
     _stateMessage('Connecting to ${station.callsign} via radio...');
 
@@ -448,11 +477,180 @@ class WinlinkClient {
 
     // User-initiated disconnect: do not auto-retry.
     _userDisconnect = true;
+    _disconnectTransport();
+  }
 
-    if (_transportType == WinlinkTransportType.tcp) {
-      disconnectTcp();
-    } else if (_transportType == WinlinkTransportType.x25) {
-      _disconnectX25();
+  void _disconnectTransport() {
+    switch (_transportType) {
+      case WinlinkTransportType.tcp:
+        disconnectTcp();
+      case WinlinkTransportType.x25:
+        _disconnectX25();
+      case WinlinkTransportType.xara:
+        _disconnectXara();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // XARA transport
+  // ---------------------------------------------------------------------------
+
+  /// Connects through the XARA software modem once the radio lock (which forces
+  /// the XARA modem on [radioId]) is in place.
+  void _startXara(int radioId, StationInfo station) {
+    _userDisconnect = false;
+    _pendingDisconnect = false;
+    _sessionState = <String, Object?>{};
+    _remoteAddress = station.callsign.trim().toUpperCase();
+    if (!(_broker.getValue<bool>(radioId, 'AudioState', false) ?? false)) {
+      _errorMessage('Enable the radio audio to use XARA.');
+      _unlockRadio();
+      return;
+    }
+    final path = AX25Address.parsePath(station.ax25Path);
+    if (path == null || path.length > 2) {
+      _errorMessage('XARA requires a valid path with up to two digipeaters.');
+      _unlockRadio();
+      return;
+    }
+    final vias = path.map((address) => address.toString()).toList();
+    _setConnectionState(WinlinkConnectionState.connecting);
+    _stateMessage('Connecting to $_remoteAddress via XARA...');
+
+    final DateTime lockDeadline = DateTime.now().add(_xaraLockWait);
+    _xaraTimer?.cancel();
+    _xaraTimer = Timer.periodic(const Duration(milliseconds: 200), (Timer t) {
+      if (_disposed || _currentState != WinlinkConnectionState.connecting) {
+        t.cancel();
+        return;
+      }
+      if (_winlinkLockApplied(radioId)) {
+        t.cancel();
+        _broker.logInfo(
+          '[WinlinkClient] XARA connect to $_remoteAddress via radio $radioId',
+        );
+        _broker.dispatch(
+          deviceId: radioId,
+          name: 'XaraConnect',
+          data: <String, Object?>{'Remote': _remoteAddress, 'Vias': vias},
+          store: false,
+        );
+        _xaraTimer = Timer(_xaraConnectLimit, () {
+          if (_currentState != WinlinkConnectionState.connecting) return;
+          _errorMessage('No answer from $_remoteAddress over XARA.');
+          _broker.dispatch(
+            deviceId: radioId,
+            name: 'XaraAbort',
+            data: null,
+            store: false,
+          );
+          _finishXara();
+        });
+      } else if (DateTime.now().isAfter(lockDeadline)) {
+        t.cancel();
+        _errorMessage('Could not switch the radio to the Winlink channel.');
+        _finishXara();
+      }
+    });
+  }
+
+  bool _winlinkLockApplied(int radioId) {
+    final Object? lock = _broker.getValue<Object>(radioId, 'LockState', null);
+    if (lock is! Map) return false;
+    final bool locked =
+        (lock['isLocked'] ?? lock['IsLocked']) as bool? ?? false;
+    final Object? usage = lock['usage'] ?? lock['Usage'];
+    return locked && usage == 'Winlink';
+  }
+
+  void _onXaraEvent(int deviceId, String name, Object? data) {
+    if (_disposed || _transportType != WinlinkTransportType.xara) return;
+    if (deviceId != _lockedRadioId || data is! Map) return;
+    switch (data['evt']) {
+      case 'connected':
+        _xaraTimer?.cancel();
+        _xaraLevel = null;
+        _sessionState = <String, Object?>{};
+        _setConnectionState(WinlinkConnectionState.connected);
+      case 'timedOut':
+      case 'unableToConnect':
+        if (_currentState == WinlinkConnectionState.connecting &&
+            !_userDisconnect) {
+          _errorMessage('No answer from $_remoteAddress over XARA.');
+        } else if (_currentState == WinlinkConnectionState.connected) {
+          _errorMessage('XARA link to $_remoteAddress timed out.');
+        }
+        _finishXara();
+      case 'disconnected':
+        _finishXara();
+      case 'bitrate':
+        final Object? level = data['level'];
+        if (data['tx'] == false &&
+            level != _xaraLevel &&
+            _currentState == WinlinkConnectionState.connected) {
+          _xaraLevel = level;
+          _stateMessage('XARA level $level, ${data['bps']} bps');
+        }
+    }
+  }
+
+  void _onXaraData(int deviceId, String name, Object? data) {
+    if (_disposed || _transportType != WinlinkTransportType.xara) return;
+    if (deviceId != _lockedRadioId || data is! Uint8List || data.isEmpty)
+      return;
+    _processStream(data);
+  }
+
+  void _sendXaraBytes(Uint8List data) {
+    if (_currentState != WinlinkConnectionState.connected ||
+        _lockedRadioId <= 0) {
+      _broker.logError('[WinlinkClient] XARA send failed: not connected');
+      return;
+    }
+    _broker.dispatch(
+      deviceId: _lockedRadioId,
+      name: 'XaraSend',
+      data: data,
+      store: false,
+    );
+  }
+
+  void _disconnectXara() {
+    if (_pendingDisconnect) return;
+    if (_currentState == WinlinkConnectionState.disconnected) return;
+    final int radioId = _lockedRadioId;
+    if (radioId <= 0) {
+      _finishXara();
+      return;
+    }
+    _pendingDisconnect = true;
+    _setConnectionState(WinlinkConnectionState.disconnecting);
+    _broker.dispatch(
+      deviceId: radioId,
+      name: 'XaraDisconnect',
+      data: null,
+      store: false,
+    );
+    _xaraTimer?.cancel();
+    _xaraTimer = Timer(_xaraDisconnectLimit, () {
+      _broker.dispatch(
+        deviceId: radioId,
+        name: 'XaraAbort',
+        data: null,
+        store: false,
+      );
+      _finishXara();
+    });
+  }
+
+  void _finishXara() {
+    _xaraTimer?.cancel();
+    _xaraTimer = null;
+    _pendingDisconnect = false;
+    if (_currentState == WinlinkConnectionState.disconnected) {
+      _unlockRadio();
+    } else {
+      _setConnectionState(WinlinkConnectionState.disconnected);
     }
   }
 
@@ -483,7 +681,7 @@ class WinlinkClient {
     if (_disposed) return;
 
     // Only relevant while a radio-based session is active.
-    if (_transportType != WinlinkTransportType.x25 || _lockedRadioId <= 0) {
+    if (_transportType == WinlinkTransportType.tcp || _lockedRadioId <= 0) {
       return;
     }
     if (_currentState == WinlinkConnectionState.disconnected) return;
@@ -510,6 +708,9 @@ class WinlinkClient {
       // unlock the radio; just dispose and reset to disconnected.
       _lockedRadioId = -1;
       _disposeAX25Session();
+      _xaraTimer?.cancel();
+      _xaraTimer = null;
+      _pendingDisconnect = false;
       _errorMessage('Radio disconnected, Winlink session ended.');
       _setConnectionState(WinlinkConnectionState.disconnected);
     }
@@ -573,6 +774,8 @@ class WinlinkClient {
       _sendTcpString(output);
     } else if (_transportType == WinlinkTransportType.x25) {
       _sendX25String(output);
+    } else {
+      _sendXaraBytes(Uint8List.fromList(utf8.encode(output)));
     }
   }
 
@@ -582,6 +785,8 @@ class WinlinkClient {
       _sendTcpBytes(data);
     } else if (_transportType == WinlinkTransportType.x25) {
       _sendX25Bytes(data);
+    } else {
+      _sendXaraBytes(data);
     }
   }
 
@@ -1000,11 +1205,7 @@ class WinlinkClient {
           // close it. The error was dispatched via WinlinkError above, so the
           // UI keeps showing it (with its OK button) independently of the
           // disconnect.
-          if (_transportType == WinlinkTransportType.tcp) {
-            disconnectTcp();
-          } else if (_transportType == WinlinkTransportType.x25) {
-            _disconnectX25();
-          }
+          _disconnectTransport();
           return;
         }
         // Benign informational status; surface it to the user but keep the
@@ -1262,11 +1463,7 @@ class WinlinkClient {
                   '[WinlinkClient] Proposal checksum failed: expected ${_checksumHex(checksum)}, got $value',
                 );
                 _errorMessage('Checksum Failed');
-                if (_transportType == WinlinkTransportType.tcp) {
-                  disconnectTcp();
-                } else if (_transportType == WinlinkTransportType.x25) {
-                  _disconnectX25();
-                }
+                _disconnectTransport();
               }
             }
           }
@@ -1276,11 +1473,7 @@ class WinlinkClient {
             '[WinlinkClient] Received FQ, remote closing session',
           );
           _updateEmails();
-          if (_transportType == WinlinkTransportType.tcp) {
-            disconnectTcp();
-          } else if (_transportType == WinlinkTransportType.x25) {
-            _disconnectX25();
-          }
+          _disconnectTransport();
         }
       }
     }
@@ -1373,6 +1566,16 @@ class WinlinkClient {
           disconnectTcp();
         } else if (_transportType == WinlinkTransportType.x25) {
           _disposeAX25Session();
+        } else {
+          _xaraTimer?.cancel();
+          if (_lockedRadioId > 0) {
+            _broker.dispatch(
+              deviceId: _lockedRadioId,
+              name: 'XaraAbort',
+              data: null,
+              store: false,
+            );
+          }
         }
       }
 

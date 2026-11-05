@@ -9,6 +9,27 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
+  String get settingsCustomMapEnabled => 'Use custom map source';
+
+  @override
+  String get settingsCustomMapUrl => 'Map tile URL';
+
+  @override
+  String get settingsCustomMapAttribution => 'Attribution (optional)';
+
+  @override
+  String get settingsCustomMapHelp =>
+      'Use a raster XYZ tile URL in Web Mercator (PNG, JPEG or WebP). Follow the provider\'s attribution and usage terms; download offline maps only if permitted. On web, the server must allow CORS and HTTPS pages require HTTPS tiles. Custom tiles keep their original colors in dark mode.';
+
+  @override
+  String get settingsCustomMapInvalid =>
+      'Enter a valid HTTP/HTTPS raster XYZ URL containing all three coordinate placeholders shown in the example. HTTPS web pages require HTTPS tiles.';
+
+  @override
+  String get mapDownloadFailed =>
+      'Map download failed. Some tiles may not be cached; check the Debug tab and try again.';
+
+  @override
   String get appTitle => 'Handi-Talkie Commander';
 
   @override
@@ -357,6 +378,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get statusBluetoothNotAvailable => 'Bluetooth not available';
+
+  @override
+  String get statusBluetoothNotAuthorized => 'Bluetooth permission denied';
 
   @override
   String get statusScanningForRadios => 'Scanning for radios...';
@@ -1063,6 +1087,50 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsEnableWebServer => 'Enable Web Server';
 
   @override
+  String get settingsEnableAgentApi => 'Allow test agents (automation API)';
+
+  @override
+  String agentControlActive(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count test agents are controlling this station',
+      one: 'A test agent is controlling this station',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String agentControlActiveRadios(int count, String radios) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count test agents are controlling this station',
+      one: 'A test agent is controlling this station',
+    );
+    return '$_temp0 - radios: $radios';
+  }
+
+  @override
+  String get agentControlStop => 'Stop & disable';
+
+  @override
+  String get settingsAgentApiToken => 'Token:';
+
+  @override
+  String get settingsAgentApiCopyToken => 'Copy token';
+
+  @override
+  String get settingsAgentApiNewToken => 'Generate a new token';
+
+  @override
+  String get settingsAgentApiTokenCopied => 'Agent token copied to clipboard';
+
+  @override
+  String get settingsAgentApiWarning =>
+      'Clients with this token can read this station\'s packet capture and logs, and can lock radios, run the BBS and make XARA connections, which transmit. A banner with a Stop button is shown while an agent is connected. Share the token only with tools you trust, and never expose the web server port to the internet.';
+
+  @override
   String get settingsPort => 'Port:';
 
   @override
@@ -1276,6 +1344,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get connectBluetoothOffBody =>
       'Bluetooth is not available or is turned off.\n\nPlease enable Bluetooth in your device settings and try again.';
+
+  @override
+  String get connectBluetoothUnauthorizedBody =>
+      'HTCommander does not have permission to use Bluetooth.\n\nOpen Settings, select HTCommander and allow Bluetooth access, then try again.';
 
   @override
   String get radioConnectionTitle => 'Radio Connection';
@@ -2107,6 +2179,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get terminalNotConnected => 'Not connected';
 
   @override
+  String get terminalBusy => 'The terminal is already in use';
+
+  @override
+  String get terminalXaraRequiresAudio =>
+      'Enable the radio audio to use XARA. XARA is not available on web or iOS.';
+
+  @override
+  String get terminalXaraNoAnswer => 'The XARA connection failed or timed out.';
+
+  @override
+  String get terminalXaraLockTimeout =>
+      'Could not lock and tune the radio to the terminal channel.';
+
+  @override
+  String get terminalXaraDisconnectTimeout =>
+      'The XARA disconnect timed out; the link was aborted.';
+
+  @override
+  String get terminalXaraPathInvalid =>
+      'Enter up to two valid digipeater callsigns, separated by commas.';
+
+  @override
   String terminalError(String error) {
     return 'Error: $error';
   }
@@ -2743,6 +2837,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".';
 
   @override
+  String get aprsSoftwareBeaconNoLocation =>
+      'Beacon not sent. No location fix is available yet. Set a location source (manual, device, GPS or radio GPS) or add a beacon message.';
+
+  @override
   String get softwareBeaconSmartHint =>
       'Sends an extra beacon when you move a significant distance or change direction, between interval beacons.';
 
@@ -3235,8 +3333,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commsSaveAsTitle => 'Save As';
 
   @override
+  String get commsExportCsv => 'Save as CSV...';
+
+  @override
+  String get commsExportTxt => 'Save as TXT...';
+
+  @override
+  String get commsNoMessagesToSave => 'There are no messages to save';
+
+  @override
   String get commsTransmitDisabledAprs =>
       'Transmit is disabled while VFO A is set to the APRS channel.';
+
+  @override
+  String get commsAprsSatelliteUseAprsTab =>
+      'Tracking an APRS satellite. Use the APRS tab to transmit.';
 
   @override
   String get commsWaitTransmission =>
@@ -3552,6 +3663,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String beaconEveryMinutes(int n) {
     return 'Every $n minutes';
   }
+
+  @override
+  String get xaraSettingsTitle => 'XARA Settings';
+
+  @override
+  String get xaraSettingsKeyUp => 'Key-up pre-roll (ms)';
+
+  @override
+  String get xaraSettingsKeyUpHelp =>
+      'Silence before each burst so the radio can key up and the remote squelch can open.';
+
+  @override
+  String get xaraSettingsLatency => 'Transmit latency (ms)';
+
+  @override
+  String get xaraSettingsLatencyHelp =>
+      'Delay from handing audio to the radio until the remote station hears it. Do not include the key-up pre-roll; XARA adds it automatically. Too little latency can cause missed replies.';
+
+  @override
+  String xaraSettingsDefaultMs(int value) {
+    return 'Default: $value ms. Range: 0-5000 ms.';
+  }
+
+  @override
+  String get xaraSettingsTimingInvalid =>
+      'Enter a whole number from 0 to 5000.';
+
+  @override
+  String get xaraSettingsLinkWarning =>
+      'These settings apply to all XARA radios. Saving changed timings disconnects any active XARA links.';
+
+  @override
+  String get xaraSettingsRestoreDefaults => 'Restore Defaults';
+
+  @override
+  String get xaraSettingsSave => 'Save';
 
   @override
   String get assConnectTerminal => 'Connect to Terminal Station';
@@ -4373,7 +4520,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsWinlinkGatewayDbInfo =>
-      'Download a small offline list of Winlink packet gateways to find nearby stations and their frequencies on the map.';
+      'Download a small offline list of Winlink packet and VARA-FM gateways to find nearby stations, frequencies and supported modes on the map.';
 
   @override
   String settingsWinlinkGatewayDbInstalled(String version, int count) {

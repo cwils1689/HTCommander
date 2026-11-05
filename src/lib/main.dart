@@ -26,6 +26,7 @@ import 'dialogs/rename_regions_dialog.dart';
 import 'dialogs/repeaterbook_dialog.dart';
 import 'dialogs/app_settings.dart';
 import 'dialogs/settings_dialog.dart';
+import 'dialogs/xara_settings_dialog.dart';
 import 'handlers/frame_deduplicator.dart';
 import 'handlers/packet_store.dart';
 import 'handlers/aprs_handler.dart';
@@ -40,6 +41,7 @@ import 'handlers/agwpe_handler.dart';
 import 'handlers/web_server_handler.dart';
 import 'handlers/home_assistant_handler.dart';
 import 'handlers/debug_log_handler.dart';
+import 'handlers/terminal_handler.dart';
 import 'handlers/location_handler.dart';
 import 'gps/gps_serial_handler.dart';
 import 'gps/gps_data.dart';
@@ -103,6 +105,7 @@ import 'winlink/mail_store.dart';
 import 'winlink/winlink_client.dart';
 import 'widgets/radio_panel.dart';
 import 'widgets/radio_status_bar.dart';
+import 'widgets/agent_control_banner.dart';
 import 'echolink/echolink_client.dart' show echoLinkDeviceId;
 import 'allstar/allstar_client.dart' show allStarDeviceId;
 import 'widgets/comms_tab.dart';
@@ -576,6 +579,13 @@ Future<void> _startApp(List<String> args) async {
   final debugLogHandler = DebugLogHandler();
   debugLogHandler.init();
   DataBroker.addDataHandler('DebugLogHandler', debugLogHandler);
+
+  // Register the terminal engine. The Terminal tab (in this or a detached
+  // window) and test agents drive it with Terminal* commands. The hosted web
+  // build keeps its own, since it runs its terminal against its own radio view.
+  final terminalHandler = TerminalHandler();
+  terminalHandler.init();
+  DataBroker.addDataHandler('TerminalHandler', terminalHandler);
 
   // Register the torrent handler so that the Torrent tab can share, request and
   // transfer files over a radio locked to the "Torrent" usage. Its store is
@@ -1101,6 +1111,7 @@ class _MainFormState extends State<MainForm>
   bool _softwareModemFec = true; // FX.25 FEC on transmit (software modem)
   bool _hostAudioEnabled = false; // Hosted web: play the host's mirrored audio
   String _dartTxLevel = '0'; // DART transmit level ('0'..'5' or 'F')
+  bool _xaraWide = false; // XARA FM bandwidth: wide (true) or narrow
   String _aprsModemMode = 'none'; // APRS modem mode ('none' or 'afsk1200')
   bool _aprsModemFec = true; // FX.25 FEC on transmit (APRS modem)
   int _regionCount =
@@ -1295,6 +1306,7 @@ class _MainFormState extends State<MainForm>
         'StationId',
         'AllowTransmit',
         'WinlinkPassword',
+        HostBridge.hostCredentialsValue,
         'CheckForUpdates',
         'ShowAllChannels',
         'ShowChannelFrequency',
@@ -1502,6 +1514,13 @@ class _MainFormState extends State<MainForm>
     _dartTxLevel = (_broker.getValue<String>(0, 'DartTxMode', '0') ?? '0')
         .toUpperCase();
 
+    _broker.subscribe(
+      deviceId: 0,
+      name: 'XaraWide',
+      callback: _onXaraWideChanged,
+    );
+    _xaraWide = _broker.getValue<bool>(0, 'XaraWide', false) ?? false;
+
     // Subscribe to the independent APRS modem mode / FEC changes
     _broker.subscribe(
       deviceId: 0,
@@ -1570,15 +1589,27 @@ class _MainFormState extends State<MainForm>
     });
   }
 
+  /// Whether a Winlink password is set. The hosted web UI never receives the
+  /// host's credentials, only which ones are configured.
+  bool _readWinlinkPasswordSet() {
+    if (HostBridge.isHosted) {
+      final set = DataBroker.getValueDynamic(
+        0,
+        HostBridge.hostCredentialsValue,
+      );
+      return set is List && set.contains('WinlinkPassword');
+    }
+    return (DataBroker.getValue<String>(0, 'WinlinkPassword', '') ?? '')
+        .isNotEmpty;
+  }
+
   /// Load settings from DataBroker (device 0).
   void _loadSettingsFromBroker() {
     _callSign = DataBroker.getValue<String>(0, 'CallSign', '') ?? '';
     _stationId = DataBroker.getValue<int>(0, 'StationId', 0) ?? 0;
     _allowTransmit =
         (DataBroker.getValue<int>(0, 'AllowTransmit', 0) ?? 0) == 1;
-    _winlinkPasswordSet =
-        (DataBroker.getValue<String>(0, 'WinlinkPassword', '') ?? '')
-            .isNotEmpty;
+    _winlinkPasswordSet = _readWinlinkPasswordSet();
     _repeaterBookTokenSet = _isValidRepeaterBookToken(
       DataBroker.getValue<String>(0, 'RepeaterBookToken', '') ?? '',
     );
@@ -1698,7 +1729,8 @@ class _MainFormState extends State<MainForm>
           _rebuildTabsForTransmit();
           break;
         case 'WinlinkPassword':
-          _winlinkPasswordSet = (data as String? ?? '').isNotEmpty;
+        case HostBridge.hostCredentialsValue:
+          _winlinkPasswordSet = _readWinlinkPasswordSet();
           _rebuildTabsForTransmit();
           break;
         case 'ShowAllChannels':
@@ -2088,6 +2120,10 @@ class _MainFormState extends State<MainForm>
     }
   }
 
+  void _onXaraWideChanged(int deviceId, String name, Object? data) {
+    if (data is bool) setState(() => _xaraWide = data);
+  }
+
   /// Handle APRS modem mode changes from the DataBroker.
   void _onAprsModemModeChanged(int deviceId, String name, Object? data) {
     if (data is String) {
@@ -2318,6 +2354,15 @@ class _MainFormState extends State<MainForm>
       command: 'SetDartTxMode',
       setting: 'DartTxMode',
       value: level,
+    );
+  }
+
+  /// Select narrow or wide XARA FM via the DataBroker.
+  void _setXaraWide(bool wide) {
+    _dispatchModemControl(
+      command: 'SetXaraWide',
+      setting: 'XaraWide',
+      value: wide,
     );
   }
 
@@ -3660,6 +3705,11 @@ class _MainFormState extends State<MainForm>
                   onPressed: () => _setSoftwareModemMode('DART'),
                   checked: _softwareModemMode == 'dart',
                 ),
+                AppMenuAction(
+                  label: 'XARA FM',
+                  onPressed: () => _setSoftwareModemMode('XARA'),
+                  checked: _softwareModemMode == 'xara',
+                ),
                 const AppMenuDivider(),
                 AppMenuAction(
                   label: 'FX.25 FEC',
@@ -3708,6 +3758,27 @@ class _MainFormState extends State<MainForm>
                     label: l10n.menuDartLevelF,
                     onPressed: () => _setDartTxLevel('F'),
                     checked: _dartTxLevel == 'F',
+                  ),
+                ],
+              ),
+            if (_softwareModemMode == 'xara')
+              AppSubmenu(
+                label: 'XARA FM',
+                children: [
+                  AppMenuAction(
+                    label: 'Narrow',
+                    onPressed: () => _setXaraWide(false),
+                    checked: !_xaraWide,
+                  ),
+                  AppMenuAction(
+                    label: 'Wide',
+                    onPressed: () => _setXaraWide(true),
+                    checked: _xaraWide,
+                  ),
+                  const AppMenuDivider(),
+                  AppMenuAction(
+                    label: l10n.menuSettings,
+                    onPressed: () => showXaraSettingsDialog(context),
                   ),
                 ],
               ),
@@ -3938,6 +4009,8 @@ class _MainFormState extends State<MainForm>
                     ],
                   ),
                 ),
+                // Shown while test agents control this station (with Stop).
+                if (!kIsWeb) const AgentControlBanner(),
                 // Status bar (hidden when disabled, height is too small, or
                 // keyboard is shown)
                 if (_showStatusBar &&
@@ -4729,9 +4802,13 @@ class _MainFormState extends State<MainForm>
 
   Future<RadioScanOutcome> _runRadioScan() async {
     _broker.logInfo('Connect requested - checking Bluetooth...');
-    final bluetoothAvailable = await BluetoothService.checkBluetooth();
-    if (!bluetoothAvailable) {
-      _broker.logError('Bluetooth not available');
+    final availability = await BluetoothService.getBluetoothAvailability();
+    if (availability == BluetoothAvailability.unauthorized) {
+      _broker.logError('Bluetooth permission denied for this app');
+      return RadioScanOutcome.bluetoothUnauthorized;
+    }
+    if (availability != BluetoothAvailability.available) {
+      _broker.logError('Bluetooth not available (${availability.name})');
       return RadioScanOutcome.bluetoothUnavailable;
     }
 

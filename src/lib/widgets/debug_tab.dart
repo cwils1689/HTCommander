@@ -325,14 +325,18 @@ class _DebugTabState extends State<DebugTab>
       pos += 8 + size + (size & 1);
     }
     if (dataOffset < 0 || audioFormat != 1) return null;
-    if (dataOffset + dataLen > bytes.length) dataLen = bytes.length - dataOffset;
+    if (dataOffset + dataLen > bytes.length) {
+      dataLen = bytes.length - dataOffset;
+    }
     final pcm = Uint8List.sublistView(bytes, dataOffset, dataOffset + dataLen);
     return (pcm: pcm, sampleRate: sampleRate, channels: channels, bits: bits);
   }
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Opens the raw command test dialog for the currently connected radio.
@@ -573,7 +577,10 @@ class _DebugTabState extends State<DebugTab>
           height: menuItemHeight,
           padding: menuItemPadding,
           child: Row(
-            children: [const SizedBox(width: 20), Text(l10n.debugQueryDeviceNames)],
+            children: [
+              const SizedBox(width: 20),
+              Text(l10n.debugQueryDeviceNames),
+            ],
           ),
         ),
         PopupMenuItem<String>(
@@ -641,7 +648,9 @@ class _DebugTabState extends State<DebugTab>
           value: 'clear',
           height: menuItemHeight,
           padding: menuItemPadding,
-          child: Row(children: [const SizedBox(width: 20), Text(l10n.tabClear)]),
+          child: Row(
+            children: [const SizedBox(width: 20), Text(l10n.tabClear)],
+          ),
         ),
         // macOS-only option to show built-in menus (skip on web)
         if (!kIsWeb && Platform.isMacOS) ...[

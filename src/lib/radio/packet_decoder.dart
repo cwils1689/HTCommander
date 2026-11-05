@@ -10,6 +10,7 @@ import 'ax25_packet.dart';
 import 'bss_packet.dart';
 import 'tnc_data_fragment.dart';
 import 'utils.dart';
+import 'xara_capture.dart';
 
 /// A named section of decoded packet detail lines.
 class PacketDecodeSection {
@@ -27,6 +28,10 @@ class PacketDecoder {
   /// Converts a fragment to a short single-line summary for the packet list.
   static String fragmentToShortString(TncDataFragment fragment) {
     final data = fragment.data;
+
+    if (fragment.frameType == FragmentFrameType.xara) {
+      return XaraCapture.parse(data)?.summary ?? RadioUtils.bytesToHex(data);
+    }
 
     // BSS Protocol - decode packets starting with 0x01.
     if (BSSPacket.isBSSPacket(data)) {
@@ -76,6 +81,18 @@ class PacketDecoder {
     return sb.toString().replaceAll('\r', '').replaceAll('\n', '');
   }
 
+  /// The bytes that actually went over the air for [fragment]. For XARA
+  /// session captures this strips the capture header and debug metadata,
+  /// leaving the raw frame (control codes have none).
+  static Uint8List frameBytes(TncDataFragment fragment) {
+    if (fragment.frameType != FragmentFrameType.xara) return fragment.data;
+    final capture = XaraCapture.parse(fragment.data);
+    if (capture == null) return fragment.data;
+    return capture.isControl || capture.isListen
+        ? Uint8List(0)
+        : capture.payload;
+  }
+
   /// Builds the full set of decode detail sections for a fragment.
   static List<PacketDecodeSection> decode(TncDataFragment fragment) {
     final frame = PacketDecodeSection('Frame');
@@ -94,17 +111,40 @@ class PacketDecoder {
       );
     }
     packetSection.lines.add(MapEntry('Time', fragment.time.toString()));
-    final len = fragment.data.length;
-    packetSection.lines.add(MapEntry('Size', '$len byte${len > 1 ? 's' : ''}'));
-    packetSection.lines.add(MapEntry('Data', _toAscii(fragment.data)));
-    packetSection.lines.add(
-      MapEntry('Data HEX', RadioUtils.bytesToHex(fragment.data)),
-    );
+    // Control codes are tone patterns and receiver-state entries are local, so
+    // neither has frame bytes to show.
+    final xaraCapture = fragment.frameType == FragmentFrameType.xara
+        ? XaraCapture.parse(fragment.data)
+        : null;
+    final bool xaraControl =
+        xaraCapture != null && (xaraCapture.isControl || xaraCapture.isListen);
+    if (!xaraControl) {
+      final bytes = frameBytes(fragment);
+      final len = bytes.length;
+      packetSection.lines.add(
+        MapEntry('Size', '$len byte${len == 1 ? '' : 's'}'),
+      );
+      packetSection.lines.add(MapEntry('Data', _toAscii(bytes)));
+      packetSection.lines.add(
+        MapEntry('Data HEX', RadioUtils.bytesToHex(bytes)),
+      );
+    }
 
     // Frame group (encoding).
     final encoding = _encodingString(fragment);
     if (encoding.isNotEmpty) {
       frame.lines.add(MapEntry('Encoding', encoding));
+    }
+
+    if (fragment.frameType == FragmentFrameType.xara) {
+      final xara = PacketDecodeSection('XARA');
+      final capture = XaraCapture.parse(fragment.data);
+      if (capture == null) {
+        xara.lines.add(const MapEntry('Decode', 'Invalid XARA capture.'));
+      } else {
+        xara.lines.addAll(capture.details);
+      }
+      return [frame, packetSection, xara].where((s) => !s.isEmpty).toList();
     }
 
     if (BSSPacket.isBSSPacket(fragment.data)) {
@@ -258,17 +298,23 @@ class PacketDecoder {
       case FragmentEncodingType.softwareDart:
         encoding = 'Software DART${_dartLevelString(fragment.dartMode)}';
         break;
+      case FragmentEncodingType.softwareXara:
+        encoding = 'Software XARA FM';
+        break;
       case FragmentEncodingType.unknown:
         return '';
     }
 
     if (fragment.frameType == FragmentFrameType.ax25) encoding += ', AX.25';
     if (fragment.frameType == FragmentFrameType.fx25) encoding += ', FX.25';
+    if (fragment.frameType == FragmentFrameType.xara) {
+      return XaraCapture.parse(fragment.data)?.encodingLabel ??
+          '$encoding, Session';
+    }
 
     // DART reports LDPC bit-error corrections; the AFSK/PSK modems report
     // FX.25 Reed-Solomon symbol / HDLC bit corrections.
-    final bool isDart =
-        fragment.encoding == FragmentEncodingType.softwareDart;
+    final bool isDart = fragment.encoding == FragmentEncodingType.softwareDart;
     final String unit = isDart ? 'LDPC bit' : '';
     final String noun = unit.isEmpty ? 'Correction' : '$unit Correction';
     if (fragment.corrections == 0) {

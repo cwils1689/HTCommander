@@ -399,6 +399,16 @@ button press, or the remote `DO_PROG_FUNC`/`TOGGLE_AB_CH` below), so it is the
 reliable source for "which VFO is the operator on right now?". `currChId` is a
 different thing — the channel id the radio is *receiving* on this instant.
 
+During dual-watch reception, the Radio tab and compact status bar temporarily
+move the yellow highlight and red marker to the VFO whose configured channel
+matches `currChId`, while `isInRx` and `isSq` are both set. For example,
+`01 B4 FB 80 00` reports VFO A selected, squelch open, reception on channel 15,
+and RSSI 8; if channel 15 is assigned to VFO B, B is highlighted. The idle frame
+`01 84 FB 00 00` restores the highlight to A even though `currChId` is still 15.
+Channel taps continue to target the selected VFO, not this temporary receive
+highlight. Scanning, unknown receiving channels, and equal A/B assignments keep
+the selected-VFO highlight.
+
 ### READ_RF_CH (13) / WRITE_RF_CH (14) → `RadioChannelInfo`
 
 A channel is a 25-byte record (offset 5 onward in a reply; offset 0 onward in a
@@ -622,12 +632,74 @@ downlink **437.800 MHz**). The two commands are always sent **as a pair**, once
 per update (roughly once a second), and each gets a one-byte `[0x00]` success
 reply.
 
-HTCommander implements this same flow: a **Satellite** usage lock puts the radio
-into tracking mode, and the satellite handler pushes a fresh
-`SET_SATELLITE_INFO` + `FREQ_MODE_SET_PAR` pair every second for the length of
-the pass (see `RadioFreqModePar` / `RadioSatelliteInfo` in
+HTCommander uses a **Satellite** usage lock to put the radio into tracking mode.
+The satellite handler computes fresh display metadata and desired frequencies
+every second, but the radio layer now limits `FREQ_MODE_SET_PAR` updates to
+reduce receive interruptions (see the mitigation below and
+`RadioFreqModePar` / `RadioSatelliteInfo` in
 [radio_models.dart](../../src/lib/radio/radio_models.dart) and
 `Radio._onSatelliteTrackUpdate` in [radio.dart](../../src/lib/radio/radio.dart)).
+
+Both commands are always enabled. The temporary **Debug** tab disable toggles
+used for reception diagnostics have been removed, and their previously saved
+values are ignored. Frequency updates still respect the Doppler retune
+threshold and optional receive-audio hold.
+
+#### Confirmed reception interruption (2026-11-02)
+
+Manual testing with the independent Debug toggles isolated the command that
+breaks received Bluetooth audio:
+
+- **`SET_SATELLITE_INFO` (77) is safe in the tested setup:** its periodic
+  satellite-display updates do not cause the audio breaks.
+- **`FREQ_MODE_SET_PAR` (35) causes the audio breaks.** Sending it every second
+  for Doppler correction interrupts an otherwise continuous reception, producing
+  many roughly one-second recordings instead of one long clip.
+
+This affects continuous reception such as SSTV as well as voice recording.
+HTCommander's receive pipeline treats an audio-end event as the end of a
+recording and also finalizes active SSTV decoding. The test identifies the
+triggering command, but does not establish whether the radio loses audio samples,
+merely splits the stream, or which payload field or firmware operation causes
+the interruption. It also does not establish whether an unchanged-frequency
+payload behaves differently.
+
+For comparison testing, tune first, then disable `FREQ_MODE_SET_PAR` while
+leaving `SET_SATELLITE_INFO` enabled. This holds the last tuned frequencies:
+**Doppler correction stops**, so this is a diagnostic workaround, not a fix.
+Re-enable the command before leaving satellite mode, as noted above.
+
+#### Mitigation: threshold retuning and an optional RX hold
+
+The **Satellite** tab menu now offers **Doppler settings...**:
+
+- **Retune threshold:** defaults to **1000 Hz**. After the three mode-entry/
+  settling frames (`0x0A03`, `0x0A03`, `0x0A00`), a tuning command is sent only
+  when the desired RX or TX frequency differs from the last sent frequency by
+  at least the threshold. Drift accumulates against the last sent values, not
+  the preceding one-second calculation. The choices are any frequency change,
+  500 Hz, 1000 Hz, and 2000 Hz; identical frequencies are skipped even with
+  "Any frequency change". `SET_SATELLITE_INFO` still updates every second.
+- **Hold Doppler updates while receiving:** optional and **off by default**.
+  Uses Bluetooth RX audio-run start/end events, not RSSI or recording state.
+  While reception is active, periodic tuning is deferred; only the latest
+  desired correction is considered when reception ends, still subject to the
+  threshold. Initial tuning and explicit target, tone, or RX/TX availability
+  changes bypass the hold. Remaining entry/settling frames can wait for RX to
+  end.
+
+Both settings persist globally across launches and apply to all radios.
+Changes take effect on the next tracking tick. Stopping tracking, disabling
+satellite support, unlocking, or disconnecting discards deferred corrections;
+switching satellites or usages starts fresh. Stop-tracking commands are not
+subject to the mitigation (the separate Debug disable toggle still blocks them).
+
+This reduces the number of disruptive commands; it does not make retuning
+seamless. The threshold is an experimental FM compromise, not a verified
+receiver tolerance. Holding throughout a long transmission can let Doppler drift
+outside the receiver's useful bandwidth, especially on UHF. Actual hardware
+reception with these mitigations still needs testing; no alternative
+interruption-free tuning command has been established.
 
 #### FREQ_MODE_SET_PAR (35) — the Doppler-steered VFO
 
@@ -734,12 +806,20 @@ The whole ISS session in the capture unfolds like this:
    followed by `FREQ_MODE_SET_PAR` (Doppler-corrected RX/TX), and the radio
    ACKs each with `[0x00]`. This repeats for the whole pass — 25+ update pairs in
    the capture.
-3. **Teardown** — to stop tracking, the app sends a single `FREQ_MODE_SET_PAR`
-   with an **all-zero 16-byte payload**. That drops the radio out of frequency
-   (VFO) mode, and the radio responds with a burst of `htSettingsChanged`
-   (`EVENT_NOTIFICATION` type 6) events as it restores its normal channel state.
-   No "stop" `SET_SATELLITE_INFO` is sent — clearing the VFO is what ends the
-   session.
+3. **Teardown** — to stop tracking, the app sends `FREQ_MODE_SET_PAR` with an
+   **all-zero 16-byte payload twice**, about 180 ms apart. After the first one
+   the radio still reports frequency mode active (`freqModeStatusChanged`
+   flags low byte `0x40`); only the second drops it out of frequency (VFO)
+   mode. The radio then responds with a burst of `htSettingsChanged`
+   (`EVENT_NOTIFICATION` type 6) events and a final `freqModeStatusChanged`
+   with flags low byte `0x00` as it restores its normal channel state. Sending
+   only one stop leaves the radio stuck in VFO mode. No "stop"
+   `SET_SATELLITE_INFO` is sent — clearing the VFO is what ends the session.
+   While in satellite/VFO mode the HT status reports channel id **254**, and
+   after teardown the radio does **not** push `htStatusChanged` (only
+   `htSettingsChanged` as channels change) until it next receives a signal.
+   HTCommander therefore substitutes settings channel A for that stale id
+   until the radio reports a real channel.
 
 ```mermaid
 sequenceDiagram
@@ -754,7 +834,11 @@ sequenceDiagram
     end
     A->>R: FREQ_MODE_SET_PAR (16 zero bytes)  %% stop tracking
     R-->>A: 0x00
+    R-->>A: EVENT_NOTIFICATION freqModeStatusChanged (still 0x40)
+    A->>R: FREQ_MODE_SET_PAR (16 zero bytes, ~180 ms later)
+    R-->>A: 0x00
     R-->>A: EVENT_NOTIFICATION htSettingsChanged (×N)
+    R-->>A: EVENT_NOTIFICATION freqModeStatusChanged (0x00, channel mode)
 ```
 
 ---
@@ -771,7 +855,7 @@ notification's inline payload.
 | 2 | `dataRxd` | Inline TNC fragment (hardware AFSK path) |
 | 3 | `newInquiryData` | |
 | 4 | `restoreFactorySettings` | |
-| 5 | `htChChanged` | App re-reads settings |
+| 5 | `htChChanged` | Inline `RadioChannelInfo`; updates channel cache and re-reads settings |
 | 6 | `htSettingsChanged` | Inline `RadioSettings` |
 | 7 | `ringingStopped` | |
 | 8 | `radioStatusChanged` | Inline `RadioFmRadioStatus` |
@@ -796,6 +880,23 @@ _sendCommand(RadioCommandGroup.basic, RadioBasicCommand.registerNotification,
 
 `positionChange` is registered with a 4-byte form `[0, 0, 0, 13]`. A radio power
 cycle clears all registrations, so the app re-applies them on every connection.
+
+### htChChanged (5) layout
+
+The payload after the notification byte is a complete 25-byte channel record,
+with the same offsets as a `READ_RF_CH` reply: channel id at frame offset 5,
+TX/RX frequencies at 6/10, sub-audio at 14/16, flags at 18/19, and a
+10-byte GBK channel name at 20. Offsets refer to the command frame without
+the outer GAIA serial header.
+
+Physical-button transmit-power changes push this event even when the selected
+channel id does not change. Bit `0x40` at offset 18 indicates High power,
+bit `0x02` indicates Medium, and neither indicates Low. For example, flags
+`0x1E`, `0x5C`, and `0x1C` report Medium, High, and Low respectively.
+HTCommander updates both the individual channel and the full loaded channel
+list immediately, so channel displays refresh without reconnecting. It also
+retains the settings re-read, but does not treat the event as a response to an
+outstanding channel-read request.
 
 ### freqModeStatusChanged (14) layout
 

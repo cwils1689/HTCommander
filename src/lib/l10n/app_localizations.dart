@@ -112,6 +112,42 @@ abstract class AppLocalizations {
     Locale('zh'),
   ];
 
+  /// No description provided for @settingsCustomMapEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Use custom map source'**
+  String get settingsCustomMapEnabled;
+
+  /// No description provided for @settingsCustomMapUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Map tile URL'**
+  String get settingsCustomMapUrl;
+
+  /// No description provided for @settingsCustomMapAttribution.
+  ///
+  /// In en, this message translates to:
+  /// **'Attribution (optional)'**
+  String get settingsCustomMapAttribution;
+
+  /// No description provided for @settingsCustomMapHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a raster XYZ tile URL in Web Mercator (PNG, JPEG or WebP). Follow the provider\'s attribution and usage terms; download offline maps only if permitted. On web, the server must allow CORS and HTTPS pages require HTTPS tiles. Custom tiles keep their original colors in dark mode.'**
+  String get settingsCustomMapHelp;
+
+  /// No description provided for @settingsCustomMapInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid HTTP/HTTPS raster XYZ URL containing all three coordinate placeholders shown in the example. HTTPS web pages require HTTPS tiles.'**
+  String get settingsCustomMapInvalid;
+
+  /// No description provided for @mapDownloadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Map download failed. Some tiles may not be cached; check the Debug tab and try again.'**
+  String get mapDownloadFailed;
+
   /// The application product name. Do not translate.
   ///
   /// In en, this message translates to:
@@ -777,6 +813,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Bluetooth not available'**
   String get statusBluetoothNotAvailable;
+
+  /// No description provided for @statusBluetoothNotAuthorized.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth permission denied'**
+  String get statusBluetoothNotAuthorized;
 
   /// Status message shown while scanning for radios.
   ///
@@ -2020,6 +2062,60 @@ abstract class AppLocalizations {
   /// **'Enable Web Server'**
   String get settingsEnableWebServer;
 
+  /// No description provided for @settingsEnableAgentApi.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow test agents (automation API)'**
+  String get settingsEnableAgentApi;
+
+  /// No description provided for @agentControlActive.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{A test agent is controlling this station} other{{count} test agents are controlling this station}}'**
+  String agentControlActive(int count);
+
+  /// No description provided for @agentControlActiveRadios.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{A test agent is controlling this station} other{{count} test agents are controlling this station}} - radios: {radios}'**
+  String agentControlActiveRadios(int count, String radios);
+
+  /// No description provided for @agentControlStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop & disable'**
+  String get agentControlStop;
+
+  /// No description provided for @settingsAgentApiToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Token:'**
+  String get settingsAgentApiToken;
+
+  /// No description provided for @settingsAgentApiCopyToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy token'**
+  String get settingsAgentApiCopyToken;
+
+  /// No description provided for @settingsAgentApiNewToken.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate a new token'**
+  String get settingsAgentApiNewToken;
+
+  /// No description provided for @settingsAgentApiTokenCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Agent token copied to clipboard'**
+  String get settingsAgentApiTokenCopied;
+
+  /// No description provided for @settingsAgentApiWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Clients with this token can read this station\'s packet capture and logs, and can lock radios, run the BBS and make XARA connections, which transmit. A banner with a Stop button is shown while an agent is connected. Share the token only with tools you trust, and never expose the web server port to the internet.'**
+  String get settingsAgentApiWarning;
+
   /// No description provided for @settingsPort.
   ///
   /// In en, this message translates to:
@@ -2391,6 +2487,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Bluetooth is not available or is turned off.\n\nPlease enable Bluetooth in your device settings and try again.'**
   String get connectBluetoothOffBody;
+
+  /// No description provided for @connectBluetoothUnauthorizedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'HTCommander does not have permission to use Bluetooth.\n\nOpen Settings, select HTCommander and allow Bluetooth access, then try again.'**
+  String get connectBluetoothUnauthorizedBody;
 
   /// No description provided for @radioConnectionTitle.
   ///
@@ -3880,6 +3982,42 @@ abstract class AppLocalizations {
   /// **'Not connected'**
   String get terminalNotConnected;
 
+  /// No description provided for @terminalBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'The terminal is already in use'**
+  String get terminalBusy;
+
+  /// No description provided for @terminalXaraRequiresAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable the radio audio to use XARA. XARA is not available on web or iOS.'**
+  String get terminalXaraRequiresAudio;
+
+  /// No description provided for @terminalXaraNoAnswer.
+  ///
+  /// In en, this message translates to:
+  /// **'The XARA connection failed or timed out.'**
+  String get terminalXaraNoAnswer;
+
+  /// No description provided for @terminalXaraLockTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not lock and tune the radio to the terminal channel.'**
+  String get terminalXaraLockTimeout;
+
+  /// No description provided for @terminalXaraDisconnectTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The XARA disconnect timed out; the link was aborted.'**
+  String get terminalXaraDisconnectTimeout;
+
+  /// No description provided for @terminalXaraPathInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter up to two valid digipeater callsigns, separated by commas.'**
+  String get terminalXaraPathInvalid;
+
   /// No description provided for @terminalError.
   ///
   /// In en, this message translates to:
@@ -5050,6 +5188,12 @@ abstract class AppLocalizations {
   /// **'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".'**
   String get aprsSoftwareBeaconNoAprsChannel;
 
+  /// No description provided for @aprsSoftwareBeaconNoLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Beacon not sent. No location fix is available yet. Set a location source (manual, device, GPS or radio GPS) or add a beacon message.'**
+  String get aprsSoftwareBeaconNoLocation;
+
   /// No description provided for @softwareBeaconSmartHint.
   ///
   /// In en, this message translates to:
@@ -5776,11 +5920,35 @@ abstract class AppLocalizations {
   /// **'Save As'**
   String get commsSaveAsTitle;
 
+  /// No description provided for @commsExportCsv.
+  ///
+  /// In en, this message translates to:
+  /// **'Save as CSV...'**
+  String get commsExportCsv;
+
+  /// No description provided for @commsExportTxt.
+  ///
+  /// In en, this message translates to:
+  /// **'Save as TXT...'**
+  String get commsExportTxt;
+
+  /// No description provided for @commsNoMessagesToSave.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no messages to save'**
+  String get commsNoMessagesToSave;
+
   /// No description provided for @commsTransmitDisabledAprs.
   ///
   /// In en, this message translates to:
   /// **'Transmit is disabled while VFO A is set to the APRS channel.'**
   String get commsTransmitDisabledAprs;
+
+  /// No description provided for @commsAprsSatelliteUseAprsTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Tracking an APRS satellite. Use the APRS tab to transmit.'**
+  String get commsAprsSatelliteUseAprsTab;
 
   /// No description provided for @commsWaitTransmission.
   ///
@@ -6339,6 +6507,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Every {n} minutes'**
   String beaconEveryMinutes(int n);
+
+  /// No description provided for @xaraSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'XARA Settings'**
+  String get xaraSettingsTitle;
+
+  /// No description provided for @xaraSettingsKeyUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Key-up pre-roll (ms)'**
+  String get xaraSettingsKeyUp;
+
+  /// No description provided for @xaraSettingsKeyUpHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Silence before each burst so the radio can key up and the remote squelch can open.'**
+  String get xaraSettingsKeyUpHelp;
+
+  /// No description provided for @xaraSettingsLatency.
+  ///
+  /// In en, this message translates to:
+  /// **'Transmit latency (ms)'**
+  String get xaraSettingsLatency;
+
+  /// No description provided for @xaraSettingsLatencyHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Delay from handing audio to the radio until the remote station hears it. Do not include the key-up pre-roll; XARA adds it automatically. Too little latency can cause missed replies.'**
+  String get xaraSettingsLatencyHelp;
+
+  /// No description provided for @xaraSettingsDefaultMs.
+  ///
+  /// In en, this message translates to:
+  /// **'Default: {value} ms. Range: 0-5000 ms.'**
+  String xaraSettingsDefaultMs(int value);
+
+  /// No description provided for @xaraSettingsTimingInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a whole number from 0 to 5000.'**
+  String get xaraSettingsTimingInvalid;
+
+  /// No description provided for @xaraSettingsLinkWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'These settings apply to all XARA radios. Saving changed timings disconnects any active XARA links.'**
+  String get xaraSettingsLinkWarning;
+
+  /// No description provided for @xaraSettingsRestoreDefaults.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore Defaults'**
+  String get xaraSettingsRestoreDefaults;
+
+  /// No description provided for @xaraSettingsSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get xaraSettingsSave;
 
   /// No description provided for @assConnectTerminal.
   ///
@@ -7843,7 +8071,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsWinlinkGatewayDbInfo.
   ///
   /// In en, this message translates to:
-  /// **'Download a small offline list of Winlink packet gateways to find nearby stations and their frequencies on the map.'**
+  /// **'Download a small offline list of Winlink packet and VARA-FM gateways to find nearby stations, frequencies and supported modes on the map.'**
   String get settingsWinlinkGatewayDbInfo;
 
   /// Installed Winlink gateway directory version and gateway count

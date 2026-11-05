@@ -9,6 +9,26 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
+  String get settingsCustomMapEnabled => '使用自定义地图源';
+
+  @override
+  String get settingsCustomMapUrl => '地图瓦片 URL';
+
+  @override
+  String get settingsCustomMapAttribution => '署名信息（可选）';
+
+  @override
+  String get settingsCustomMapHelp =>
+      '使用 Web Mercator 投影的栅格 XYZ 瓦片 URL（PNG、JPEG 或 WebP）。请遵守提供商的署名要求和使用条款，仅在允许时下载离线地图。在网页端，服务器必须允许 CORS，HTTPS 页面需要 HTTPS 瓦片。自定义瓦片在深色模式下保持原始颜色。';
+
+  @override
+  String get settingsCustomMapInvalid =>
+      '请输入有效的 HTTP/HTTPS 栅格 XYZ URL，包含示例中的全部三个坐标占位符。HTTPS 页面需要 HTTPS 瓦片。';
+
+  @override
+  String get mapDownloadFailed => '地图下载失败。部分瓦片可能未缓存；请查看调试选项卡并重试。';
+
+  @override
   String get appTitle => 'Handi-Talkie Commander';
 
   @override
@@ -353,6 +373,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get statusBluetoothNotAvailable => '蓝牙不可用';
+
+  @override
+  String get statusBluetoothNotAuthorized => '???????';
 
   @override
   String get statusScanningForRadios => '正在搜索电台...';
@@ -1033,6 +1056,48 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsEnableWebServer => '启用 Web 服务器';
 
   @override
+  String get settingsEnableAgentApi => '允许测试代理（自动化 API）';
+
+  @override
+  String agentControlActive(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个测试代理正在控制此台站',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String agentControlActiveRadios(int count, String radios) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个测试代理正在控制此台站',
+    );
+    return '$_temp0 - 电台：$radios';
+  }
+
+  @override
+  String get agentControlStop => '停止并禁用';
+
+  @override
+  String get settingsAgentApiToken => '令牌：';
+
+  @override
+  String get settingsAgentApiCopyToken => '复制令牌';
+
+  @override
+  String get settingsAgentApiNewToken => '生成新令牌';
+
+  @override
+  String get settingsAgentApiTokenCopied => '代理令牌已复制到剪贴板';
+
+  @override
+  String get settingsAgentApiWarning =>
+      '持有此令牌的客户端可以读取此台站的抓包数据和日志、锁定电台、运行 BBS，以及建立会进行发射的 XARA 连接。代理连接期间会显示带有停止按钮的横幅。请仅与您信任的工具共享令牌，切勿将 Web 服务器端口暴露到互联网。';
+
+  @override
   String get settingsPort => '端口：';
 
   @override
@@ -1238,6 +1303,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get connectBluetoothOffBody => '蓝牙不可用或已禁用。\n\n请在设备设置中启用蓝牙后重试。';
+
+  @override
+  String get connectBluetoothUnauthorizedBody =>
+      'HTCommander ??????????\n\n???????? HTCommander ?????????????';
 
   @override
   String get radioConnectionTitle => '电台连接';
@@ -2064,6 +2133,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get terminalNotConnected => '未连接';
 
   @override
+  String get terminalBusy => '终端已在使用中';
+
+  @override
+  String get terminalXaraRequiresAudio => '请启用电台音频以使用 XARA。XARA 不支持网页版或 iOS。';
+
+  @override
+  String get terminalXaraNoAnswer => 'XARA 连接失败或超时。';
+
+  @override
+  String get terminalXaraLockTimeout => '无法锁定电台并将其调谐到终端信道。';
+
+  @override
+  String get terminalXaraDisconnectTimeout => 'XARA 断开连接超时；链路已中止。';
+
+  @override
+  String get terminalXaraPathInvalid => '请输入最多两个有效的数字中继呼号，以逗号分隔。';
+
+  @override
   String terminalError(String error) {
     return '错误：$error';
   }
@@ -2687,6 +2774,10 @@ class AppLocalizationsZh extends AppLocalizations {
       'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".';
 
   @override
+  String get aprsSoftwareBeaconNoLocation =>
+      '信标未发送。尚未获取到位置。请设置位置来源（手动、设备、GPS 或电台 GPS），或添加信标消息。';
+
+  @override
   String get softwareBeaconSmartHint => '在间隔信标之间，当您移动较远距离或改变方向时发送额外的信标。';
 
   @override
@@ -3171,7 +3262,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commsSaveAsTitle => '另存为';
 
   @override
+  String get commsExportCsv => '另存为CSV...';
+
+  @override
+  String get commsExportTxt => '另存为TXT...';
+
+  @override
+  String get commsNoMessagesToSave => '没有可保存的消息';
+
+  @override
   String get commsTransmitDisabledAprs => '当 VFO A 设置为 APRS 信道时，发射被禁用。';
+
+  @override
+  String get commsAprsSatelliteUseAprsTab => '正在跟踪 APRS 卫星。请使用 APRS 选项卡进行发射。';
 
   @override
   String get commsWaitTransmission => '请等待当前发送完成。';
@@ -3472,6 +3575,40 @@ class AppLocalizationsZh extends AppLocalizations {
   String beaconEveryMinutes(int n) {
     return '每 $n 分钟';
   }
+
+  @override
+  String get xaraSettingsTitle => 'XARA 设置';
+
+  @override
+  String get xaraSettingsKeyUp => '发射前静音时长 (ms)';
+
+  @override
+  String get xaraSettingsKeyUpHelp => '每次突发传输前的静音，让电台有时间开始发射，并让远端台站的静噪打开。';
+
+  @override
+  String get xaraSettingsLatency => '发射延迟 (ms)';
+
+  @override
+  String get xaraSettingsLatencyHelp =>
+      '从将音频交给电台到远端台站听到音频的延迟。不要包含发射前的静音时长；XARA 会自动将其加上。延迟过短可能导致错过回复。';
+
+  @override
+  String xaraSettingsDefaultMs(int value) {
+    return '默认值：$value ms。范围：0-5000 ms。';
+  }
+
+  @override
+  String get xaraSettingsTimingInvalid => '请输入 0 到 5000 之间的整数。';
+
+  @override
+  String get xaraSettingsLinkWarning =>
+      '这些设置适用于所有 XARA 电台。保存更改后的时间参数会断开所有活动的 XARA 链路。';
+
+  @override
+  String get xaraSettingsRestoreDefaults => '恢复默认值';
+
+  @override
+  String get xaraSettingsSave => '保存';
 
   @override
   String get assConnectTerminal => '连接到终端台站';
@@ -4276,7 +4413,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsWinlinkGatewayDbInfo =>
-      '下载 Winlink 分组网关的小型离线列表，以便在地图上查找附近的台站及其频率。';
+      '下载 Winlink 分组和 VARA-FM 网关的小型离线列表，以便在地图上查找附近的台站及其频率。';
 
   @override
   String settingsWinlinkGatewayDbInstalled(String version, int count) {

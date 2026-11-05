@@ -9,6 +9,27 @@ class AppLocalizationsJa extends AppLocalizations {
   AppLocalizationsJa([String locale = 'ja']) : super(locale);
 
   @override
+  String get settingsCustomMapEnabled => 'カスタム地図ソースを使用';
+
+  @override
+  String get settingsCustomMapUrl => '地図タイルのURL';
+
+  @override
+  String get settingsCustomMapAttribution => '出典表記（任意）';
+
+  @override
+  String get settingsCustomMapHelp =>
+      'Web MercatorのラスターXYZタイルURL（PNG、JPEG、WebP）を使用してください。提供元の出典表記と利用規約に従い、許可されている場合のみオフライン地図をダウンロードしてください。WebではサーバーがCORSを許可する必要があり、HTTPSページにはHTTPSタイルが必要です。カスタムタイルはダークモードでも元の色を保持します。';
+
+  @override
+  String get settingsCustomMapInvalid =>
+      '例に示す3つの座標プレースホルダーをすべて含む有効なHTTP/HTTPSラスターXYZ URLを入力してください。HTTPSページにはHTTPSタイルが必要です。';
+
+  @override
+  String get mapDownloadFailed =>
+      '地図のダウンロードに失敗しました。一部のタイルがキャッシュされていない可能性があります。デバッグタブを確認して再試行してください。';
+
+  @override
   String get appTitle => 'Handi-Talkie Commander';
 
   @override
@@ -357,6 +378,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get statusBluetoothNotAvailable => 'Bluetooth を利用できません';
+
+  @override
+  String get statusBluetoothNotAuthorized => 'Bluetooth ?????????';
 
   @override
   String get statusScanningForRadios => '無線機を検索中...';
@@ -1047,6 +1071,48 @@ class AppLocalizationsJa extends AppLocalizations {
   String get settingsEnableWebServer => 'Web サーバーを有効化';
 
   @override
+  String get settingsEnableAgentApi => 'テストエージェントを許可（自動化 API）';
+
+  @override
+  String agentControlActive(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 個のテストエージェントがこの局を制御しています',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String agentControlActiveRadios(int count, String radios) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 個のテストエージェントがこの局を制御しています',
+    );
+    return '$_temp0 - 無線機: $radios';
+  }
+
+  @override
+  String get agentControlStop => '停止して無効化';
+
+  @override
+  String get settingsAgentApiToken => 'トークン:';
+
+  @override
+  String get settingsAgentApiCopyToken => 'トークンをコピー';
+
+  @override
+  String get settingsAgentApiNewToken => '新しいトークンを生成';
+
+  @override
+  String get settingsAgentApiTokenCopied => 'エージェントのトークンをクリップボードにコピーしました';
+
+  @override
+  String get settingsAgentApiWarning =>
+      'このトークンを持つクライアントは、この局のパケットキャプチャやログを読み取り、無線機をロックし、BBS を実行し、送信を伴う XARA 接続を確立できます。エージェントの接続中は、停止ボタン付きのバナーが表示されます。トークンは信頼できるツールとのみ共有し、Web サーバーのポートをインターネットに公開しないでください。';
+
+  @override
   String get settingsPort => 'ポート:';
 
   @override
@@ -1255,6 +1321,10 @@ class AppLocalizationsJa extends AppLocalizations {
   @override
   String get connectBluetoothOffBody =>
       'Bluetooth を利用できないか、無効になっています。\n\nデバイスの設定で Bluetooth を有効にしてから再試行してください。';
+
+  @override
+  String get connectBluetoothUnauthorizedBody =>
+      'HTCommander ?? Bluetooth ??????????????\n\n??????HTCommander ????? Bluetooth ???????????????????????';
 
   @override
   String get radioConnectionTitle => '無線機の接続';
@@ -2082,6 +2152,27 @@ class AppLocalizationsJa extends AppLocalizations {
   String get terminalNotConnected => '未接続';
 
   @override
+  String get terminalBusy => 'ターミナルはすでに使用中です';
+
+  @override
+  String get terminalXaraRequiresAudio =>
+      'XARA を使用するには無線機の音声を有効にしてください。XARA は Web および iOS では利用できません。';
+
+  @override
+  String get terminalXaraNoAnswer => 'XARA 接続に失敗したか、タイムアウトしました。';
+
+  @override
+  String get terminalXaraLockTimeout => '無線機をロックしてターミナルのチャンネルに合わせることができませんでした。';
+
+  @override
+  String get terminalXaraDisconnectTimeout =>
+      'XARA の切断がタイムアウトしたため、リンクを強制終了しました。';
+
+  @override
+  String get terminalXaraPathInvalid =>
+      '有効なデジピーターのコールサインを最大 2 つ、カンマで区切って入力してください。';
+
+  @override
   String terminalError(String error) {
     return 'エラー: $error';
   }
@@ -2709,6 +2800,10 @@ class AppLocalizationsJa extends AppLocalizations {
       'Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".';
 
   @override
+  String get aprsSoftwareBeaconNoLocation =>
+      'ビーコンを送信できませんでした。位置情報がまだ取得できていません。位置情報ソース（手動、デバイス、GPS、または無線機のGPS）を設定するか、ビーコンメッセージを追加してください。';
+
+  @override
   String get softwareBeaconSmartHint =>
       '一定の距離を移動したり方向を変えたりすると、インターバルビーコンの間に追加のビーコンを送信します。';
 
@@ -3196,8 +3291,21 @@ class AppLocalizationsJa extends AppLocalizations {
   String get commsSaveAsTitle => '名前を付けて保存';
 
   @override
+  String get commsExportCsv => 'CSV形式で保存...';
+
+  @override
+  String get commsExportTxt => 'TXT形式で保存...';
+
+  @override
+  String get commsNoMessagesToSave => '保存するメッセージがありません';
+
+  @override
   String get commsTransmitDisabledAprs =>
       'VFO A が APRS チャンネルに設定されている場合、送信は無効になります。';
+
+  @override
+  String get commsAprsSatelliteUseAprsTab =>
+      'APRS 衛星を追跡中です。送信には APRS タブを使用してください。';
 
   @override
   String get commsWaitTransmission => '現在の送信が完了するまでお待ちください。';
@@ -3505,6 +3613,41 @@ class AppLocalizationsJa extends AppLocalizations {
   String beaconEveryMinutes(int n) {
     return '$n 分ごと';
   }
+
+  @override
+  String get xaraSettingsTitle => 'XARA 設定';
+
+  @override
+  String get xaraSettingsKeyUp => '送信前の無音時間 (ms)';
+
+  @override
+  String get xaraSettingsKeyUpHelp =>
+      '各バーストの前に無音時間を設け、無線機が送信を開始し、相手局のスケルチが開くのを待ちます。';
+
+  @override
+  String get xaraSettingsLatency => '送信遅延 (ms)';
+
+  @override
+  String get xaraSettingsLatencyHelp =>
+      '音声を無線機に渡してから相手局に聞こえるまでの遅延です。送信前の無音時間は含めないでください。XARA が自動的に加算します。遅延が短すぎると応答を受信できない場合があります。';
+
+  @override
+  String xaraSettingsDefaultMs(int value) {
+    return '既定値: $value ms。範囲: 0-5000 ms。';
+  }
+
+  @override
+  String get xaraSettingsTimingInvalid => '0 から 5000 までの整数を入力してください。';
+
+  @override
+  String get xaraSettingsLinkWarning =>
+      'これらの設定はすべての XARA 無線機に適用されます。変更した時間設定を保存すると、アクティブな XARA リンクがすべて切断されます。';
+
+  @override
+  String get xaraSettingsRestoreDefaults => '既定値に戻す';
+
+  @override
+  String get xaraSettingsSave => '保存';
 
   @override
   String get assConnectTerminal => 'ターミナル局に接続';
@@ -4315,7 +4458,7 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get settingsWinlinkGatewayDbInfo =>
-      'Winlink パケットゲートウェイの小さなオフライン一覧をダウンロードし、近くの局とその周波数を地図で確認できます。';
+      'Winlink パケットおよび VARA-FM ゲートウェイの小さなオフライン一覧をダウンロードし、近くの局とその周波数を地図で確認できます。';
 
   @override
   String settingsWinlinkGatewayDbInstalled(String version, int count) {

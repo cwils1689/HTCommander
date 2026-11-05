@@ -1,5 +1,36 @@
 {
+  "settingsCustomMapEnabled": "Usa una sorgente di mappe personalizzata",
+  "settingsCustomMapUrl": "URL delle tessere della mappa",
+  "settingsCustomMapAttribution": "Attribuzione (facoltativa)",
+  "settingsCustomMapHelp": "Usa un URL di tessere raster XYZ in Web Mercator (PNG, JPEG o WebP). Rispetta l’attribuzione e le condizioni d’uso del fornitore; scarica mappe offline solo se consentito. Sul Web il server deve consentire CORS e le pagine HTTPS richiedono tessere HTTPS. Le tessere personalizzate mantengono i colori originali in modalità scura.",
+  "settingsCustomMapInvalid": "Inserisci un URL raster XYZ HTTP/HTTPS valido con tutti e tre i segnaposto delle coordinate dell’esempio. Le pagine HTTPS richiedono tessere HTTPS.",
+  "mapDownloadFailed": "Download della mappa non riuscito. Alcune tessere potrebbero non essere nella cache; controlla la scheda Debug e riprova.",
   "@@locale": "it",
+  "settingsEnableAgentApi": "Consenti agenti di test (API di automazione)",
+  "agentControlActive": "{count, plural, one{Un agente di test sta controllando questa stazione} other{{count} agenti di test stanno controllando questa stazione}}",
+  "agentControlActiveRadios": "{count, plural, one{Un agente di test sta controllando questa stazione} other{{count} agenti di test stanno controllando questa stazione}} - radio: {radios}",
+  "agentControlStop": "Arresta e disabilita",
+  "settingsAgentApiToken": "Token:",
+  "settingsAgentApiCopyToken": "Copia token",
+  "settingsAgentApiNewToken": "Genera un nuovo token",
+  "settingsAgentApiTokenCopied": "Token dell'agente copiato negli appunti",
+  "settingsAgentApiWarning": "I client con questo token possono leggere la cattura dei pacchetti e i registri di questa stazione, bloccare le radio, eseguire il BBS e stabilire connessioni XARA che effettuano trasmissioni. Finché un agente è connesso, viene visualizzato un banner con un pulsante di arresto. Condividi il token solo con strumenti affidabili e non esporre mai la porta del server web a Internet.",
+  "terminalBusy": "Il terminale è già in uso",
+  "terminalXaraRequiresAudio": "Abilita l'audio della radio per usare XARA. XARA non è disponibile sul web o su iOS.",
+  "terminalXaraNoAnswer": "La connessione XARA non è riuscita o ha superato il tempo di attesa.",
+  "terminalXaraLockTimeout": "Impossibile bloccare la radio e sintonizzarla sul canale del terminale.",
+  "terminalXaraDisconnectTimeout": "La disconnessione XARA ha superato il tempo di attesa; il collegamento è stato interrotto.",
+  "terminalXaraPathInvalid": "Inserisci fino a due nominativi di digipeater validi, separati da virgole.",
+  "xaraSettingsTitle": "Impostazioni XARA",
+  "xaraSettingsKeyUp": "Silenzio prima della trasmissione (ms)",
+  "xaraSettingsKeyUpHelp": "Silenzio prima di ogni raffica affinché la radio possa iniziare a trasmettere e lo squelch della stazione remota possa aprirsi.",
+  "xaraSettingsLatency": "Latenza di trasmissione (ms)",
+  "xaraSettingsLatencyHelp": "Ritardo dalla consegna dell'audio alla radio fino alla sua ricezione da parte della stazione remota. Non includere il silenzio prima della trasmissione; XARA lo aggiunge automaticamente. Una latenza troppo bassa può causare la perdita di risposte.",
+  "xaraSettingsDefaultMs": "Predefinito: {value} ms. Intervallo: 0-5000 ms.",
+  "xaraSettingsTimingInvalid": "Inserisci un numero intero da 0 a 5000.",
+  "xaraSettingsLinkWarning": "Queste impostazioni si applicano a tutte le radio XARA. Il salvataggio di tempi modificati disconnette tutti i collegamenti XARA attivi.",
+  "xaraSettingsRestoreDefaults": "Ripristina valori predefiniti",
+  "xaraSettingsSave": "Salva",
 
   "appTitle": "Handi-Talkie Commander",
 
@@ -9,7 +40,7 @@
   "menuSettings": "Impostazioni...",
   "menuExit": "Esci",
   "menuRadios": "Radio",
-  "menuDualWatch": "Dual-Watch",
+  "menuDualWatch": "Doppio ascolto",
   "menuScan": "Scansione",
   "menuRegions": "Regioni",
   "menuFmRadio": "Radio FM...",
@@ -97,7 +128,7 @@
   "menuCheckForUpdates": "Verifica aggiornamenti",
   "menuAbout": "Informazioni su...",
 
-  "tabComms": "Comms",
+  "tabComms": "Comunicazioni",
   "tabAudio": "Audio",
   "tabAprs": "APRS",
   "tabMessaging": "Messaggi",
@@ -124,6 +155,7 @@
   "statusBattery": "Batteria: {percent}%",
   "statusCheckingBluetooth": "Verifica del Bluetooth...",
   "statusBluetoothNotAvailable": "Bluetooth non disponibile",
+  "statusBluetoothNotAuthorized": "Autorizzazione Bluetooth negata",
   "statusScanningForRadios": "Ricerca di radio...",
   "statusErrorScanning": "Errore durante la ricerca di radio",
   "statusNoCompatibleRadios": "Nessuna radio compatibile trovata",
@@ -135,7 +167,7 @@
 
   "settingsTabLicense": "Licenza",
   "settingsTabAprs": "APRS",
-  "settingsTabComms": "Comms",
+  "settingsTabComms": "Comunicazioni",
   "settingsTabWinlink": "Winlink",
   "settingsTabEchoLink": "EchoLink",
   "settingsTabAllStar": "AllStarLink",
@@ -219,7 +251,7 @@
   "settingsAprsIsIntro": "Connettiti alla rete APRS-IS per inviare e ricevere pacchetti APRS tramite internet e per instradare i pacchetti tra internet e l'RF.",
   "settingsAprsIsNoCallSign": "Imposta il tuo nominativo nella scheda Licenza per abilitare APRS-IS.",
   "settingsAprsIsEnable": "Abilita APRS-IS",
-  "settingsAprsIsPasscode": "Passcode",
+  "settingsAprsIsPasscode": "Codice di accesso",
   "settingsAprsIsPasscodeFor": "Passcode per {callSign}",
   "settingsAprsIsPasscodeHint": "Inserisci il tuo passcode APRS-IS",
   "settingsAprsIsServer": "Server",
@@ -413,6 +445,7 @@
   "connectAllConnectedBody": "Tutti i dispositivi radio rilevati sono già connessi.",
   "connectBluetoothOffTitle": "Bluetooth non disponibile",
   "connectBluetoothOffBody": "Il Bluetooth non è disponibile o è disattivato.\n\nAbilita il Bluetooth nelle impostazioni del dispositivo e riprova.",
+  "connectBluetoothUnauthorizedBody": "HTCommander non ha l'autorizzazione per usare il Bluetooth.\n\nApri Impostazioni, seleziona HTCommander, consenti l'accesso al Bluetooth e riprova.",
 
   "radioConnectionTitle": "Connessione radio",
   "radioConnectionEmpty": "Nessuna radio compatibile trovata.\nAssicurati che la tua radio sia accesa e che il Bluetooth sia abilitato.",
@@ -807,7 +840,7 @@
   "mapShowAprsSymbols": "Mostra simboli APRS",
   "mapShowWinlinkGateways": "Mostra gateway Winlink",
   "mapShowMeshCore": "Mostra stazioni MeshCore",
-  "meshTypeCompanion": "Companion",
+  "meshTypeCompanion": "Radio associata",
   "meshTypeRepeater": "Ripetitore",
   "meshTypeRoom": "Server stanza",
   "meshTypeSensor": "Sensore",
@@ -867,6 +900,7 @@
   "aprsSoftwareBeaconSendNow": "Invia beacon ora",
   "aprsSoftwareBeaconSent": "Beacon inviato.",
   "aprsSoftwareBeaconNotSent": "Beacon non inviato. Imposta il tuo nominativo e includi la tua posizione o un messaggio.",
+  "aprsSoftwareBeaconNoLocation": "Beacon non inviato. Nessuna posizione ancora disponibile. Imposta una fonte di posizione (manuale, dispositivo, GPS o GPS della radio) o aggiungi un messaggio beacon.",
   "softwareBeaconSmartHint": "Invia un beacon aggiuntivo tra i beacon a intervallo quando ti sposti di una distanza significativa o cambi direzione.",
   "aprsSendSms": "Invia messaggio SMS...",
   "aprsWeatherReport": "Bollettino meteo...",
@@ -915,7 +949,11 @@
   "commsRecordingWebUnavailable": "La riproduzione di registrazioni da file non è disponibile sul web.",
   "commsFileNoLongerExists": "Il file non esiste più.",
   "commsSaveAsTitle": "Salva con nome",
+  "commsExportCsv": "Salva come CSV...",
+  "commsExportTxt": "Salva come TXT...",
+  "commsNoMessagesToSave": "Non ci sono messaggi da salvare",
   "commsTransmitDisabledAprs": "La trasmissione è disabilitata mentre il VFO A è impostato sul canale APRS.",
+  "commsAprsSatelliteUseAprsTab": "Tracciamento di un satellite APRS. Usa la scheda APRS per trasmettere.",
   "commsWaitTransmission": "Attendi il completamento della trasmissione corrente.",
   "commsConnectRadioChat": "Connetti una radio prima di inviare un messaggio in chat.",
   "commsEnableAudioMode": "Abilita l'audio (il pulsante Abilita) prima di inviare in questa modalità.",
@@ -1131,7 +1169,7 @@
   "chDisableTransmit": "Disabilita trasmissione",
   "chMute": "Silenzia",
   "chScan": "Scansione",
-  "chTalkAround": "Talk around",
+  "chTalkAround": "Modalità diretta",
   "chDeemphasis": "De-enfasi",
   "chPowerHigh": "Alta",
   "chPowerMedium": "Media",
@@ -1152,7 +1190,7 @@
   "cdRxTone": "Tono RX",
   "cdTxTone": "Tono TX",
   "cdTxDisabled": "TX disabilitata",
-  "cdTalkAround": "Talk Around",
+  "cdTalkAround": "Modalità diretta",
   "cdEmpty": "(vuoto)",
   "cdBandwidthWide": "25 kHz (larga)",
   "cdBandwidthNarrow": "12,5 kHz (stretta)",
@@ -1279,7 +1317,7 @@
   "cslAutoUpdateWifi": "Aggiornamento automatico tramite Wi-Fi",
   "cslAutoUpdateWifiSubtitle": "Mantieni aggiornati automaticamente i database installati, solo tramite Wi-Fi o connessioni cablate, per evitare costi di dati mobili.",
   "settingsWinlinkGatewayDbTitle": "Elenco gateway offline",
-  "settingsWinlinkGatewayDbInfo": "Scarica un piccolo elenco offline di gateway packet Winlink per trovare le stazioni vicine e le loro frequenze sulla mappa.",
+  "settingsWinlinkGatewayDbInfo": "Scarica un piccolo elenco offline di gateway packet e VARA-FM Winlink per trovare le stazioni vicine e le loro frequenze sulla mappa.",
   "settingsWinlinkGatewayDbInstalled": "Installato: {version} ({count} gateway)",
   "settingsWinlinkGatewayDbNotInstalled": "Non installato",
   "settingsWinlinkGatewayDbDownload": "Scarica",
@@ -1375,5 +1413,237 @@
   "meshDeliverySent": "Inviato",
   "meshDeliveryDelivered": "Consegnato",
   "meshDeliveryFailed": "Non riuscito",
-  "meshDeliveryReceived": "Ricevuto"
+  "meshDeliveryReceived": "Ricevuto",
+  "settingsAprsMessages": "Messages",
+  "settingsAprsMessageRetry": "Resend messages until acknowledged",
+  "settingsAprsMessageRetryHelp": "An addressed message is sent up to 5 times, a minute apart, until the station acknowledges it. The message shows how many tries are left, and is marked undelivered if none are answered. Turn this off to send once.",
+  "aprsSoftwareBeaconNoCallsign": "Beacon not sent. Set your callsign in Settings first.",
+  "aprsSoftwareBeaconNoPosition": "Beacon not sent: no GPS position available. Check your location source, or add a status message to beacon without a position.",
+  "aprsSoftwareBeaconNoMessage": "Beacon not sent. Turn on location, or write a status message to send.",
+  "aprsSoftwareBeaconInactive": "Beacon not sent. The software beacon is turned off.",
+  "aprsSoftwareBeaconTransmitDisabled": "Beacon sent to the Internet only. Transmitting is off — enable \"Allow this application to transmit\" in Settings.",
+  "aprsSoftwareBeaconInternetOnly": "Beacon sent to the Internet only — no preferred radio is selected in the beacon settings.",
+  "aprsSoftwareBeaconNoAprsChannel": "Beacon sent to the Internet only. No connected radio has a channel for APRS: choose one in Beacon settings, or name a channel \"APRS\".",
+  "aprsStopResending": "Stop resending",
+  "aprsOtaMenu": "APRS OTA...",
+  "otaDialogTitle": "APRS OTA",
+  "otaTabOnAir": "On the air",
+  "otaTabHost": "Host an op",
+  "otaRefresh": "Refresh",
+  "otaChase": "Chase",
+  "otaOpenOpPage": "Open the op page on aprsota.org",
+  "otaOnAirCount": "{count, plural, =1{1 op on the air} other{{count} ops on the air}}",
+  "@otaOnAirCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otaAsOf": "As of {time}",
+  "@otaAsOf": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "otaMinutesLeft": "{count, plural, =0{expiring} =1{1 min left} other{{count} min left}}",
+  "@otaMinutesLeft": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otaQsoCount": "{count, plural, =1{1 QSO} other{{count} QSOs}}",
+  "@otaQsoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otaNobodyOnAir": "Nobody is on the air",
+  "otaNobodyOnAirHint": "No APRS OTA ops are running right now. Check back later, or go on the air yourself on the \"Host an op\" tab.",
+  "otaChaseTitle": "Chase {callsign}?",
+  "@otaChaseTitle": {
+    "placeholders": {
+      "callsign": {
+        "type": "String"
+      }
+    }
+  },
+  "otaChaseConfirm": "Send CHASE",
+  "otaChaseBody": "Sends \"CHASE {callsign}\" to the OTA bot as an APRS message. Beacon your position within 5 minutes or the bot will not count the contact.",
+  "@otaChaseBody": {
+    "placeholders": {
+      "callsign": {
+        "type": "String"
+      }
+    }
+  },
+  "otaChaseSent": "CHASE {callsign} sent. Beacon your position within 5 minutes.",
+  "@otaChaseSent": {
+    "placeholders": {
+      "callsign": {
+        "type": "String"
+      }
+    }
+  },
+  "otaTokenIntro": "APRS OTA needs an API token to list the ops on the air. Tokens are minted by hand by aprsota.org — request one, then paste it here.",
+  "otaTokenLabel": "API token",
+  "otaGetToken": "Get a token",
+  "otaSaveToken": "Save",
+  "otaChangeToken": "Change token",
+  "otaErrorUnauthorized": "aprsota.org rejected the API token.",
+  "otaErrorRateLimited": "Too many requests. APRS OTA asks for no more than one refresh a minute.",
+  "otaErrorGeneric": "Could not reach aprsota.org.",
+  "otaHostIntro": "Hosting puts you on the air so chasers can work you. HOST goes to the OTA bot, you send a position report within 5 minutes, and the bot confirms the op. Both have to go out over RF.",
+  "otaHostStation": "Op station: {station}",
+  "@otaHostStation": {
+    "placeholders": {
+      "station": {
+        "type": "String"
+      }
+    }
+  },
+  "otaHostNoCallsign": "Set your callsign and SSID in Settings before hosting. The op runs from that station and every command has to come from it.",
+  "otaHostRfWarning": "No connected radio has an APRS channel. The OTA bot declines ops that reach it over APRS-IS, so hosting needs a radio.",
+  "otaHostBeaconLocationWarning": "The software beacon is set to status only. Turn its location on: the bot starts an op on a position report, not a status.",
+  "otaHostNoFixWarning": "No GPS fix yet. The bot ignores a beacon with no usable position, so wait for a fix before going on the air.",
+  "otaHostBeaconOffWarning": "The software beacon is off. Hosting needs one beacon to start the op, and one every 15 minutes or so to keep your iGate sending the bot's replies to your radio.",
+  "otaHostBeaconIntervalWarning": "Your beacon interval is over 15 minutes. Shorten it while hosting, or your iGate may stop sending the bot's replies to your radio.",
+  "otaHostDescriptionLabel": "Description (optional)",
+  "otaHostDescriptionHint": "lakeshore op, HT and a signal stick",
+  "otaHostDescriptionHelp": "Chasers hear this on the air and it stays on every QSL card. Under 55 characters arrives whole.",
+  "otaHostGoOnAir": "Go on the air",
+  "otaHostHandbook": "Handbook",
+  "otaHostAwaiting": "Waiting for the OTA bot",
+  "otaHostAwaitingBody": "HOST is out. Now send a position report: the bot puts you on the air when it hears your beacon, and {time} is left of its 5 minute window.",
+  "@otaHostAwaitingBody": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "otaHostSendBeacon": "Send position report",
+  "otaHostStopWaiting": "Stop waiting",
+  "otaHostOnAir": "{station} is on the air",
+  "@otaHostOnAir": {
+    "placeholders": {
+      "station": {
+        "type": "String"
+      }
+    }
+  },
+  "otaHostMinutesLeft": "{count, plural, =0{off the air now} =1{1 min left} other{{count} min left}}",
+  "@otaHostMinutesLeft": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otaHostPoints": "{count, plural, =1{1 pt} other{{count} pts}}",
+  "@otaHostPoints": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otaHostAskTimeHint": "Send TIME or INFO to hear how long the op has left.",
+  "otaHostStay": "STAY",
+  "otaHostStayAdds": "STAY +{count} min",
+  "@otaHostStayAdds": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otaHostTime": "TIME",
+  "otaHostInfo": "INFO",
+  "otaHostChasers": "CHASERS",
+  "otaHostBlast": "BLAST",
+  "otaHostDone": "End op",
+  "otaHostCooldown": "{label} in {seconds}s",
+  "@otaHostCooldown": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "otaHostChasersWaiting": "{count, plural, =0{No chasers waiting} =1{1 chaser waiting on your QSL} other{{count} chasers waiting on your QSL}}",
+  "@otaHostChasersWaiting": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otaHostChasingCount": "{count, plural, =1{1 chasing} other{{count} chasing}}",
+  "@otaHostChasingCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "otaHostNoChasers": "Nobody is waiting on a QSL. Chasers appear here as the OTA bot relays them, and CHASERS asks the bot for the whole queue.",
+  "otaHostQsl": "QSL",
+  "otaHostQslTitle": "QSL {station}?",
+  "@otaHostQslTitle": {
+    "placeholders": {
+      "station": {
+        "type": "String"
+      }
+    }
+  },
+  "otaHostQslBody": "Confirms the contact with {station} and logs the QSO. Anything you add is relayed to them with the QSL.",
+  "@otaHostQslBody": {
+    "placeholders": {
+      "station": {
+        "type": "String"
+      }
+    }
+  },
+  "otaHostQslMessageLabel": "Message to the chaser (optional)",
+  "otaHostQslMessageHint": "thx for the contact 73",
+  "otaHostBlastTitle": "Blast everyone on the op",
+  "otaHostBlastBody": "Sends one message to every chaser on your op. Each one goes out over the air, so use it for what the whole group needs: 6 per op at most.",
+  "otaHostBlastLabel": "Message",
+  "otaHostBlastHint": "moving to the north summit",
+  "otaHostBlastSend": "Send blast",
+  "otaHostDoneTitle": "End your op?",
+  "otaHostDoneBody": "Sends DONE to the OTA bot and takes you off the air. Anything you write is kept with the log as your sign-off; it is not sent to your chasers.",
+  "otaHostSignoffLabel": "Sign-off (optional)",
+  "otaHostSignoffHint": "gotta go thx all 73",
+  "otaHostDoneConfirm": "Send DONE",
+  "otaHostEnded": "Op complete",
+  "otaHostEndedUnknown": "The op is over. Check aprsota.org for its totals.",
+  "otaHostEndedUnanswered": "Still waiting on a QSL when the op ended: {stations}",
+  "@otaHostEndedUnanswered": {
+    "placeholders": {
+      "stations": {
+        "type": "String"
+      }
+    }
+  },
+  "otaHostAnother": "Host another op",
+  "otaHostLastReply": "OTA: {message}",
+  "@otaHostLastReply": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "beaconChannelAprsHint": "The app sends and receives APRS on this channel. Left on \"Current\", it uses a channel named \"APRS\" instead."
 }

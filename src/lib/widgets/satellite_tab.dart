@@ -7,10 +7,11 @@ http://www.apache.org/licenses/LICENSE-2.0
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Radio;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -28,6 +29,7 @@ import '../services/data_broker.dart';
 import '../utils/format_utils.dart';
 import 'antenna_pointer_page.dart';
 import 'satellite_aim_indicators.dart';
+import 'satellite_globe.dart';
 import '../services/data_broker_client.dart';
 import '../services/window_service.dart';
 
@@ -53,6 +55,12 @@ class _SatelliteTabState extends State<SatelliteTab> {
   final Map<int, SatellitePass> _nextPass = {};
   List<SatellitePass> _selectedPasses = const [];
   bool _observerKnown = false;
+  double? _observerLat;
+  double? _observerLon;
+  double _minElevationDeg = 10;
+  bool _showGlobe = true;
+  bool _globeFullTab = false;
+  final GlobalKey _globeKey = GlobalKey(debugLabel: 'SatelliteGlobe');
   int? _selectedId;
 
   // Preferred (audible) radio and the lock state of each connected radio, used
@@ -111,6 +119,27 @@ class _SatelliteTabState extends State<SatelliteTab> {
       deviceId: _deviceId,
       name: 'SatelliteObserverKnown',
       callback: _onObserverKnown,
+    );
+    _broker.subscribe(
+      deviceId: _deviceId,
+      name: 'SatelliteObserverLocation',
+      callback: _onObserverLocation,
+    );
+    _minElevationDeg =
+        (DataBroker.getValue<num>(_deviceId, 'SatMinElevationDeg', 10) ?? 10)
+            .toDouble();
+    _broker.subscribe(
+      deviceId: _deviceId,
+      name: 'SatMinElevationDeg',
+      callback: _onMinElevationChanged,
+    );
+    _showGlobe =
+        (DataBroker.getValue<int>(_deviceId, 'SatelliteShowGlobe', 1) ?? 1) ==
+        1;
+    _broker.subscribe(
+      deviceId: _deviceId,
+      name: 'SatelliteShowGlobe',
+      callback: _onShowGlobeChanged,
     );
 
     _preferredRadioId =
@@ -219,6 +248,29 @@ class _SatelliteTabState extends State<SatelliteTab> {
   void _onObserverKnown(int deviceId, String name, Object? data) {
     if (data is! bool) return;
     _safeSetState(() => _observerKnown = data);
+  }
+
+  void _onObserverLocation(int deviceId, String name, Object? data) {
+    double? lat;
+    double? lon;
+    if (data is Map && data['lat'] is num && data['lon'] is num) {
+      lat = (data['lat'] as num).toDouble();
+      lon = (data['lon'] as num).toDouble();
+    }
+    _safeSetState(() {
+      _observerLat = lat;
+      _observerLon = lon;
+    });
+  }
+
+  void _onMinElevationChanged(int deviceId, String name, Object? data) {
+    if (data is! num) return;
+    _safeSetState(() => _minElevationDeg = data.toDouble());
+  }
+
+  void _onShowGlobeChanged(int deviceId, String name, Object? data) {
+    if (data is! int) return;
+    _safeSetState(() => _showGlobe = data == 1);
   }
 
   void _onPreferredRadioChanged(int deviceId, String name, Object? data) {
@@ -366,12 +418,13 @@ class _SatelliteTabState extends State<SatelliteTab> {
     });
   }
 
-  void _select(int noradId) {
+  void _select(int noradId, {bool showDetail = true}) {
     // In the narrow layout, selecting a bird hands the whole tab over to its
-    // details (the header's back button returns to the list).
+    // details (the header's back button returns to the list). The globe passes
+    // showDetail: false on a single click and opens details on double click.
     setState(() {
       _selectedId = noradId;
-      _narrowShowDetail = true;
+      if (showDetail) _narrowShowDetail = true;
     });
     _broker.dispatch(
       deviceId: _deviceId,
@@ -653,6 +706,91 @@ class _SatelliteTabState extends State<SatelliteTab> {
     );
   }
 
+  Future<void> _showDopplerSettings() async {
+    var threshold =
+        _broker.getValue<int>(_deviceId, 'SatelliteDopplerThresholdHz') ??
+        Radio.defaultSatelliteDopplerThresholdHz;
+    var holdDuringRx =
+        _broker.getValue<bool>(_deviceId, 'SatelliteHoldDopplerDuringRx') ??
+        false;
+    final thresholds = <int>{0, 500, 1000, 2000, threshold}.toList()..sort();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Doppler settings'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Retune only when RX or TX differs from the last sent '
+                    'frequency by at least:',
+                  ),
+                  DropdownButton<int>(
+                    value: threshold,
+                    isExpanded: true,
+                    items: [
+                      for (final hz in thresholds)
+                        DropdownMenuItem(
+                          value: hz,
+                          child: Text(
+                            hz == 0 ? 'Any frequency change' : '$hz Hz',
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => threshold = value);
+                      }
+                    },
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Hold Doppler updates while receiving'),
+                    value: holdDuringRx,
+                    onChanged: (value) =>
+                        setDialogState(() => holdDuringRx = value),
+                  ),
+                  const Text(
+                    'Holding avoids periodic retunes during Bluetooth RX audio, '
+                    'but long transmissions can drift off frequency. The latest '
+                    'correction is considered when reception ends. Initial '
+                    'tuning and explicit target or tone changes still apply.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    _broker.dispatch(
+      deviceId: _deviceId,
+      name: 'SatelliteDopplerThresholdHz',
+      data: threshold,
+    );
+    _broker.dispatch(
+      deviceId: _deviceId,
+      name: 'SatelliteHoldDopplerDuringRx',
+      data: holdDuringRx,
+    );
+  }
+
   void _showMenu(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final RenderBox button = context.findRenderObject() as RenderBox;
@@ -675,6 +813,29 @@ class _SatelliteTabState extends State<SatelliteTab> {
           height: menuItemHeight,
           padding: menuItemPadding,
           child: Row(children: [SizedBox(width: 20), Text('Refresh')]),
+        ),
+        const PopupMenuDivider(height: 8),
+        const PopupMenuItem<String>(
+          value: 'dopplerSettings',
+          height: menuItemHeight,
+          padding: menuItemPadding,
+          child: Row(
+            children: [SizedBox(width: 20), Text('Doppler settings...')],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'globe',
+          height: menuItemHeight,
+          padding: menuItemPadding,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                child: _showGlobe ? const Icon(Icons.check, size: 16) : null,
+              ),
+              const Text('Show globe'),
+            ],
+          ),
         ),
         const PopupMenuDivider(height: 8),
         const PopupMenuItem<String>(
@@ -717,6 +878,16 @@ class _SatelliteTabState extends State<SatelliteTab> {
         case 'refresh':
           _requestRefresh();
           break;
+        case 'dopplerSettings':
+          _showDopplerSettings();
+          break;
+        case 'globe':
+          _broker.dispatch(
+            deviceId: _deviceId,
+            name: 'SatelliteShowGlobe',
+            data: _showGlobe ? 0 : 1,
+          );
+          break;
         case 'add':
           _addSatellite();
           break;
@@ -743,19 +914,22 @@ class _SatelliteTabState extends State<SatelliteTab> {
         // In the narrow layout the details take over the whole tab once a
         // satellite has been selected; the header shows a back button.
         final narrowDetail = !wide && _narrowShowDetail && _selectedId != null;
+        final fullGlobe = _globeFullTab && _catalog.isNotEmpty;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildHeader(context, showBack: narrowDetail),
+            _buildHeader(context, showBack: narrowDetail && !fullGlobe),
             if (!_observerKnown) _buildObserverBanner(context),
             Expanded(
-              child: wide
+              child: fullGlobe
+                  ? _buildGlobe()
+                  : wide
                   ? Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         SizedBox(
                           width: 320,
-                          child: _buildSatelliteList(context),
+                          child: _buildListWithGlobe(context),
                         ),
                         const VerticalDivider(width: 1),
                         Expanded(child: _buildDetailPanel(context)),
@@ -763,7 +937,7 @@ class _SatelliteTabState extends State<SatelliteTab> {
                     )
                   : (narrowDetail
                         ? _buildDetailPanel(context)
-                        : _buildSatelliteList(context)),
+                        : _buildListWithGlobe(context)),
             ),
           ],
         );
@@ -828,6 +1002,27 @@ class _SatelliteTabState extends State<SatelliteTab> {
                 ),
               ),
             ),
+          if (_catalog.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: IconButton(
+                tooltip: _globeFullTab
+                    ? 'Exit full-tab globe'
+                    : 'Full-tab globe',
+                isSelected: _globeFullTab,
+                visualDensity: VisualDensity.compact,
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                selectedIcon: Icon(
+                  Icons.public,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                icon: const Icon(Icons.public),
+                onPressed: () => setState(() => _globeFullTab = !_globeFullTab),
+              ),
+            ),
           Builder(
             builder: (context) => InkWell(
               onTap: () => _showMenu(context),
@@ -873,6 +1068,54 @@ class _SatelliteTabState extends State<SatelliteTab> {
           ),
         ],
       ),
+    );
+  }
+
+  /// The satellite list with the 3D globe docked underneath it.
+  Widget _buildListWithGlobe(BuildContext context) {
+    if (!_showGlobe || _catalog.isEmpty) return _buildSatelliteList(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = math.min(
+          math.min(constraints.maxWidth, 420.0),
+          constraints.maxHeight * 0.55,
+        );
+        if (height < 140) return _buildSatelliteList(context);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: _buildSatelliteList(context)),
+            const Divider(height: 1),
+            SizedBox(height: height, child: _buildGlobe()),
+          ],
+        );
+      },
+    );
+  }
+
+  /// The globe, keyed so its rotation/zoom survive moving between the docked
+  /// and full-tab layouts. In full-tab mode a double click leaves full-tab
+  /// mode and opens the satellite's details.
+  Widget _buildGlobe() {
+    // While the radio is tracking a bird, show only that one.
+    final tracked = _satelliteActive && _trackingNoradId != null
+        ? _catalog[_trackingNoradId]
+        : null;
+    return SatelliteGlobe(
+      key: _globeKey,
+      satellites: tracked != null
+          ? [tracked]
+          : _catalog.values.toList(growable: false),
+      positions: _positions,
+      observerLatDeg: _observerKnown ? _observerLat : null,
+      observerLonDeg: _observerKnown ? _observerLon : null,
+      minElevationDeg: _minElevationDeg,
+      selectedId: _selectedId,
+      onSatelliteTap: (id) => _select(id, showDetail: false),
+      onSatelliteDoubleTap: (id) {
+        if (_globeFullTab) setState(() => _globeFullTab = false);
+        _select(id);
+      },
     );
   }
 
@@ -1028,6 +1271,7 @@ class _SatelliteTabState extends State<SatelliteTab> {
   }
 
   String _listSubtitle(SatelliteInfo sat) {
+    if (sat.isStatic) return 'Static test satellite';
     final pos = _positions[sat.noradId];
     if (pos != null && pos.isVisible) {
       return 'Overhead \u2022 az ${pos.azimuthDeg.round()}\u00b0';
@@ -1074,7 +1318,9 @@ class _SatelliteTabState extends State<SatelliteTab> {
         _section(
           context,
           icon: Icons.settings_input_antenna,
-          title: 'Usages & frequencies (Doppler-corrected)',
+          title: sat.isStatic
+              ? 'Usages & frequencies'
+              : 'Usages & frequencies (Doppler-corrected)',
           child: _buildFrequencySection(context, sat, pos),
         ),
         _section(
@@ -1137,11 +1383,12 @@ class _SatelliteTabState extends State<SatelliteTab> {
                   spacing: 6,
                   runSpacing: 6,
                   children: [
-                    _pill(
-                      context,
-                      'NORAD ${sat.noradId}',
-                      onTap: () => _openN2yo(sat.noradId),
-                    ),
+                    if (!sat.isStatic)
+                      _pill(
+                        context,
+                        'NORAD ${sat.noradId}',
+                        onTap: () => _openN2yo(sat.noradId),
+                      ),
                     _pill(
                       context,
                       visible ? 'Above horizon' : 'Below horizon',
@@ -1446,7 +1693,7 @@ class _SatelliteTabState extends State<SatelliteTab> {
         _preferredRadioId >= 0 &&
         !_radioBusyOther &&
         downBase != null &&
-        _observerKnown;
+        (_observerKnown || _catalog[t.noradId]?.isStatic == true);
 
     final block = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1587,6 +1834,9 @@ class _SatelliteTabState extends State<SatelliteTab> {
   }
 
   List<Widget> _buildPassRows(BuildContext context) {
+    if (_catalog[_selectedId]?.isStatic == true) {
+      return [const Text('Static test satellite')];
+    }
     if (_selectedPasses.isEmpty) {
       return [
         Text(
