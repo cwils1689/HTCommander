@@ -281,6 +281,9 @@ class Radio implements FirmwareRadio {
   // Public state
   RadioDevInfo? info;
   List<RadioChannelInfo?>? channels;
+  // Keypad VFO ("any frequency") memory slots past the channel table, keyed by
+  // channel id (e.g. 252). See [isVfoChannelId]. Dispatched as 'VfoChannels'.
+  final Map<int, RadioChannelInfo> vfoChannels = {};
   // Names of the radio's regions, indexed by region id. An entry is null until
   // its READ_REGION_NAME reply has been received. Sized to info.regionCount
   // once device info is known.
@@ -351,6 +354,7 @@ class Radio implements FirmwareRadio {
         'Scan',
         'SetGPS',
         'Region',
+        'SetAudioRelay',
       ],
       callback: _onSettingsChangeEvent,
     );
@@ -738,6 +742,13 @@ class Radio implements FirmwareRadio {
           gpsEnabled = data;
         }
         break;
+      case 'SetAudioRelay':
+        if (data is bool) {
+          setAudioRelay(data);
+        } else {
+          _debug('Ignoring SetAudioRelay - expected a boolean');
+        }
+        break;
       case 'DualWatch':
         if (_lockState != null || settings == null) return;
         if (data is bool) {
@@ -857,6 +868,10 @@ class Radio implements FirmwareRadio {
   void _onSetLockEvent(int devId, String name, dynamic data) {
     if (devId != deviceId) return;
     if (data is! SetLockData) return;
+    if (data.usage == kAudioRelayLockUsage) {
+      _debug('Ignoring SetLock - Audio Relay lock follows the radio setting');
+      return;
+    }
     if (_lockState != null || settings == null || htStatus == null) {
       _broker.logError(
         '[Radio $deviceId] SetLock rejected: requestedUsage=${data.usage} '
@@ -963,6 +978,8 @@ class Radio implements FirmwareRadio {
 
     final unlockData = data;
     if (_lockState!.usage != unlockData.usage) return;
+    // Released only by turning the Audio Relay setting off (SetAudioRelay).
+    if (unlockData.usage == kAudioRelayLockUsage) return;
     if (settings == null) return;
 
     _pendingLockChannelName = null;
@@ -979,6 +996,7 @@ class Radio implements FirmwareRadio {
       stopFreqMode();
       _lockState = null;
       _dispatch('LockState', RadioLockState(isLocked: false).toJson());
+      _syncAudioRelayLock();
       return;
     }
 
@@ -1007,6 +1025,31 @@ class Radio implements FirmwareRadio {
       channelId: -1,
     );
     _dispatch('LockState', unlockedState.toJson());
+    _syncAudioRelayLock();
+  }
+
+  /// Holds the [kAudioRelayLockUsage] lock while the radio reports Audio Relay
+  /// on, and releases it once the radio reports it off. If another usage holds
+  /// the lock when Audio Relay turns on (e.g. enabled from the radio itself),
+  /// that lock is kept and this is re-evaluated when it is released.
+  void _syncAudioRelayLock() {
+    final bool relayOn = settings?.autoRelayEn ?? false;
+    final lock = _lockState;
+    if (relayOn) {
+      if (lock != null) return;
+      _lockState = RadioLockState(
+        isLocked: true,
+        usage: kAudioRelayLockUsage,
+        regionId: -1,
+        channelId: -1,
+      );
+      _dispatch('LockState', _lockState!.toJson());
+      _debug('Radio locked for Audio Relay');
+    } else if (lock?.usage == kAudioRelayLockUsage) {
+      _lockState = null;
+      _dispatch('LockState', RadioLockState(isLocked: false).toJson());
+      _debug('Radio unlocked from Audio Relay');
+    }
   }
 
   /// Resolves a channel-by-name lock request that was deferred until the
@@ -1567,6 +1610,8 @@ class Radio implements FirmwareRadio {
     // Clear data via broker
     _dispatch('Info', null);
     _dispatch('Channels', null);
+    vfoChannels.clear();
+    _dispatch('VfoChannels', null);
     _dispatch('HtStatus', null);
     _dispatch('Settings', null);
     _dispatch('BssSettings', null);
@@ -1932,6 +1977,38 @@ class Radio implements FirmwareRadio {
     for (int i = 0; i < info!.channelCount; i++) {
       _enqueueRead(RadioBasicCommand.readRfCh, i);
     }
+    _syncVfoChannels(null, force: true);
+  }
+
+  /// True when [channelId] is a keypad VFO memory slot (see [isVfoChannelId]).
+  bool _isVfoChannelId(int channelId) =>
+      isVfoChannelId(channelId, channels?.length ?? info?.channelCount ?? 0);
+
+  /// Reads the keypad VFO slot(s) selected by the current settings. Entering
+  /// the radio's "any frequency" mode only pushes htSettingsChanged (channel A
+  /// becomes e.g. 252), so the slot is read when it becomes selected (or when
+  /// [force] is set / it is not cached yet). Later edits arrive as htChChanged.
+  void _syncVfoChannels(RadioSettings? previous, {bool force = false}) {
+    final s = settings;
+    if (s == null) return;
+    for (final id in {s.channelA, s.channelB}) {
+      if (!_isVfoChannelId(id)) continue;
+      final wasSelected =
+          previous != null &&
+          (previous.channelA == id || previous.channelB == id);
+      if (force || !wasSelected || !vfoChannels.containsKey(id)) {
+        _enqueueRead(RadioBasicCommand.readRfCh, id);
+      }
+    }
+  }
+
+  /// The channel for [channelId], including keypad VFO slots; null if unknown.
+  RadioChannelInfo? channelById(int channelId) {
+    if (channelId < 0) return null;
+    if (channels != null && channelId < channels!.length) {
+      return channels![channelId];
+    }
+    return vfoChannels[channelId];
   }
 
   String _getChannelNameById(int channelId) {
@@ -1942,12 +2019,7 @@ class Radio implements FirmwareRadio {
     if (channelId >= 0 && channelId == _aprsChannelId()) {
       return AprsChannel.channelName;
     }
-    if (channels != null &&
-        channels!.length > channelId &&
-        channels![channelId] != null) {
-      return channels![channelId]!.name;
-    }
-    return '';
+    return channelById(channelId)?.name ?? '';
   }
 
   /// The id (curr_ch_id from the HT status) of the channel currently being
@@ -2084,6 +2156,28 @@ class Radio implements FirmwareRadio {
   }
 
   // Settings and status
+  /// Changes Audio Relay via WRITE_SETTINGS, preserving the other settings.
+  /// The radio reports the confirmed value as Settings.autoRelayEn, which in
+  /// turn takes or releases the [kAudioRelayLockUsage] lock. Enabling requires
+  /// an unlocked radio; disabling is always allowed so relay switched on at the
+  /// radio while another usage held the lock can still be turned off.
+  void setAudioRelay(bool enabled) {
+    final current = settings;
+    if (current == null || current.rawData.length < 8) {
+      _debug('Ignoring Audio Relay change - settings not loaded or incomplete');
+      return;
+    }
+    if (current.autoRelayEn == enabled) {
+      _debug('Ignoring Audio Relay change - already ${enabled ? 'on' : 'off'}');
+      return;
+    }
+    if (enabled && _lockState != null) {
+      _debug('Ignoring Audio Relay change - radio is locked');
+      return;
+    }
+    writeSettings(current.toByteArrayWith(autoRelayEn: enabled));
+  }
+
   void writeSettings(Uint8List data) {
     _cancelPendingChannelReads();
     _sendCommand(
@@ -2346,12 +2440,8 @@ class Radio implements FirmwareRadio {
     if (regionId == -1 && htStatus != null) regionId = htStatus!.currRegion;
 
     // Fill channel name if not specified
-    if (channelName.isEmpty &&
-        channelId >= 0 &&
-        channels != null &&
-        channelId < channels!.length &&
-        channels![channelId] != null) {
-      channelName = channels![channelId]!.name;
+    if (channelName.isEmpty && channelId >= 0) {
+      channelName = channelById(channelId)?.name ?? '';
     }
 
     final t = DateTime.now();
@@ -3347,6 +3437,7 @@ class Radio implements FirmwareRadio {
     _debug(
       'Received settings data, length: ${data.length}, data: ${RadioUtils.bytesToHex(data)}',
     );
+    final previous = settings;
     settings = RadioSettings.fromBytes(data);
     if (settings != null) {
       _debug(
@@ -3357,6 +3448,8 @@ class Radio implements FirmwareRadio {
       // capture and later restore every setting byte, including fields the
       // parsed model does not model. Retained in memory (not persisted).
       _dispatch('SettingsRaw', base64Encode(data));
+      _syncAudioRelayLock();
+      _syncVfoChannels(previous);
     } else {
       _debug('Failed to parse settings');
     }
@@ -3429,6 +3522,16 @@ class Radio implements FirmwareRadio {
   }
 
   void _handleReadRfCh(Uint8List data) {
+    // A rejected read (e.g. a VFO slot this firmware does not expose) may not
+    // echo the channel id; release the in-flight read instead of waiting for
+    // its timeout and retries.
+    if (data.length > 4 && data[4] != 0) {
+      final r = _readInFlight;
+      if (r != null && r.cmd == RadioBasicCommand.readRfCh) {
+        _onReadReplyReceived(r.cmd, r.index);
+      }
+      return;
+    }
     final channel = RadioChannelInfo.fromBytes(data);
     // Advance the serialized read queue now that this channel's reply arrived.
     _onReadReplyReceived(RadioBasicCommand.readRfCh, channel.channelId);
@@ -3436,6 +3539,14 @@ class Radio implements FirmwareRadio {
   }
 
   void _storeChannel(RadioChannelInfo channel) {
+    if (channels != null && _isVfoChannelId(channel.channelId)) {
+      vfoChannels[channel.channelId] = channel;
+      _dispatch(
+        'VfoChannels',
+        vfoChannels.values.map((c) => c.toJson()).toList(),
+      );
+      return;
+    }
     if (channels != null && channel.channelId >= channels!.length) {
       _broker.logError(
         '[Radio $deviceId] Channel id ${channel.channelId} is out of range',
@@ -3500,23 +3611,30 @@ class Radio implements FirmwareRadio {
   ///   data[4]    = reply status (0 = success)
   ///   data[5..]  = band edges as big-endian uint16 values in (low, high)
   ///                pairs. The low 14 bits are the edge frequency in whole MHz;
-  ///                the top 2 bits carry a modulation flag (FM=0, AM=1, DMR=2).
+  ///                the top 2 bits carry a band capability flag:
+  ///                FM RX=0, AM RX=1, FM TX/RX=2.
   ///                A zero edge terminates the list (trailing bytes are padding).
+  ///                Nonzero equal-edge entries are skipped.
   ///
   /// Example body `40 6C 40 88 80 88 00 AE 01 2C 02 26 81 90 02 08 40 00 00 00`
   /// decodes to 108-136, 136-174, 300-550 and 400-520 MHz. The parsed bands
   /// are dispatched as `FreqRanges` (a list of
-  /// `{lowHz, highHz, mod}` maps, `mod`: FM=0, AM=1, DMR=2); the raw reply is
+  /// `{lowHz, highHz, mod}` maps, `mod`: FM RX=0, AM RX=1, FM TX/RX=2); the raw reply is
   /// dispatched as `FreqRangesRaw`.
   void _handleReadFreqRange(Uint8List data) {
+    _broker.logInfo(
+      '[Radio $deviceId] READ_FREQ_RANGE (39) reply: ${RadioUtils.bytesToHex(data)}',
+    );
     if (data.length < 5 || data[4] != 0) return;
     final ranges = <List<int>>[];
     for (int p = 5; p + 3 < data.length; p += 4) {
       final lowRaw = RadioUtils.getShort(data, p);
       final lowMhz = lowRaw & 0x3FFF;
       final highMhz = RadioUtils.getShort(data, p + 2) & 0x3FFF;
-      if (lowMhz == 0 || highMhz == 0 || lowMhz >= highMhz) break;
-      // Modulation support is carried in the low edge's top 2 bits.
+      if (lowMhz == 0 || highMhz == 0) break;
+      if (lowMhz == highMhz) continue;
+      if (lowMhz > highMhz) break;
+      // Band capability is carried in the low edge's top 2 bits.
       final mod = (lowRaw >> 14) & 0x03;
       ranges.add([lowMhz * 1000000, highMhz * 1000000, mod]);
     }
@@ -3688,6 +3806,8 @@ class Radio implements FirmwareRadio {
     if (settings != null) {
       _dispatch('Settings', settings!.toJson());
       _dispatch('SettingsRaw', base64Encode(data));
+      _syncAudioRelayLock();
+      _syncVfoChannels(previous);
       // A weather-mode toggle means a 254+ channel id may be genuine NOAA.
       if (previous != null && previous.wxMode != settings!.wxMode) {
         _vfoExitPending = false;

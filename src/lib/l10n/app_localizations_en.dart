@@ -3433,6 +3433,23 @@ class AppLocalizationsEn extends AppLocalizations {
       'VFO A channel de-emphasis is on and will degrade data transfers.';
 
   @override
+  String get commsAudioRelay => 'Audio Relay';
+
+  @override
+  String get commsAudioRelayWarning =>
+      'Turn on the Audio relay to record the received voice, and send the buffered recording immediately after the reception stops, to realize the echo relay function. Generally used for high-point forwarding or non-directly connected to the two places for third-party forwarding. If it is opened in a general relay station, it will cause communication confusion.';
+
+  @override
+  String get commsAudioRelayEnable => 'Enable';
+
+  @override
+  String get commsAudioRelayEnabledBanner =>
+      'Audio Relay is enabled. The radio re-transmits everything it receives.';
+
+  @override
+  String get commsAudioRelayDisable => 'Disable';
+
+  @override
   String get commsPttTransmitting => 'Transmitting';
 
   @override
@@ -4520,7 +4537,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsWinlinkGatewayDbInfo =>
-      'Download a small offline list of Winlink packet and VARA-FM gateways to find nearby stations, frequencies and supported modes on the map.';
+      'Download a small offline list of Winlink packet and XARA-FM gateways to find nearby stations, frequencies and supported modes on the map.';
 
   @override
   String settingsWinlinkGatewayDbInstalled(String version, int count) {

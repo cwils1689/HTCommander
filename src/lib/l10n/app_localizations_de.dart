@@ -3475,6 +3475,23 @@ class AppLocalizationsDe extends AppLocalizations {
       'Die De-Emphasis des VFO-A-Kanals ist aktiviert und beeinträchtigt Datenübertragungen.';
 
   @override
+  String get commsAudioRelay => 'Audio-Relais';
+
+  @override
+  String get commsAudioRelayWarning =>
+      'Aktivieren Sie das Audio-Relais, um die empfangene Sprache aufzunehmen und die gepufferte Aufnahme unmittelbar nach dem Ende des Empfangs zu senden, um die Echo-Relaisfunktion zu realisieren. Wird im Allgemeinen für die Weiterleitung von erhöhten Standorten oder zwischen zwei nicht direkt verbundenen Orten über Dritte verwendet. Wenn es an einer allgemeinen Relaisstation aktiviert wird, führt dies zu Kommunikationsverwirrung.';
+
+  @override
+  String get commsAudioRelayEnable => 'Aktivieren';
+
+  @override
+  String get commsAudioRelayEnabledBanner =>
+      'Das Audio-Relais ist aktiviert. Das Funkgerät sendet alles Empfangene erneut aus.';
+
+  @override
+  String get commsAudioRelayDisable => 'Deaktivieren';
+
+  @override
   String get commsPttTransmitting => 'Übertragung läuft';
 
   @override
@@ -4567,7 +4584,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get settingsWinlinkGatewayDbInfo =>
-      'Laden Sie eine kleine Offline-Liste von Winlink-Packet- und VARA-FM-Gateways herunter, um nahegelegene Stationen und ihre Frequenzen auf der Karte zu finden.';
+      'Laden Sie eine kleine Offline-Liste von Winlink-Packet- und XARA-FM-Gateways herunter, um nahegelegene Stationen und ihre Frequenzen auf der Karte zu finden.';
 
   @override
   String settingsWinlinkGatewayDbInstalled(String version, int count) {

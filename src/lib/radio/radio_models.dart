@@ -214,6 +214,8 @@ class RadioSettings {
   final int doubleChannel;
   final int squelchLevel;
   final bool tailElim;
+
+  /// Manufacturer application's "Audio Relay" setting.
   final bool autoRelayEn;
   final bool autoPowerOn;
   final bool keepAghfpLink;
@@ -387,7 +389,11 @@ class RadioSettings {
     bool? scan,
     int? squelchLevel,
     int? wxMode,
+    bool? autoRelayEn,
   }) {
+    if (autoRelayEn != null && rawData.length < 8) {
+      throw StateError('Settings block is too short to change Audio Relay');
+    }
     final data = toByteArray(
       channelA ?? this.channelA,
       channelB ?? this.channelB,
@@ -395,6 +401,9 @@ class RadioSettings {
       scan ?? this.scan,
       squelchLevel ?? this.squelchLevel,
     );
+    if (autoRelayEn != null) {
+      data[2] = (data[2] & 0xBF) | (autoRelayEn ? 0x40 : 0);
+    }
     // Weather mode (0=off, 1=monitor, 2=alert) is the top 2 bits of raw byte
     // 15, i.e. index 10 of the header-stripped write buffer.
     if (wxMode != null && data.length > 10) {
@@ -1071,6 +1080,12 @@ const Set<String> kSatelliteLockUsages = {
   kAprsSatLockUsage,
 };
 
+/// Lock usage held while the radio's own Audio Relay setting
+/// ([RadioSettings.autoRelayEn]) is on. The radio re-transmits what it
+/// receives, so it is unavailable for anything else. The lock follows the
+/// setting and is only released by turning Audio Relay off.
+const String kAudioRelayLockUsage = 'Audio Relay';
+
 /// Lock usage for hosting an AllStarLink node: the radio is dedicated to
 /// relaying audio between RF and the AllStarLink network.
 const String kAllStarNodeLockUsage = 'AllStarLink';
@@ -1080,6 +1095,20 @@ const String kAllStarNodeLockUsage = 'AllStarLink';
 /// channel, and it reports/uses this VFO as channel 254. Transmitting on 254
 /// keeps data frames on the satellite uplink instead of a memory channel (0).
 const int kSatelliteTransmitChannelId = 254;
+
+/// The keypad "any frequency" (VFO) mode, entered by holding `*` on the radio,
+/// selects a hidden memory slot past the regular channel table as channel A
+/// (observed: 252). The slot holds the typed frequency, modulation and
+/// bandwidth, is pushed via htChChanged and can be read with READ_RF_CH. Ids
+/// from the radio's channel count up to (but excluding) 254 are such VFO slots.
+const int kVfoChannelIdLimit = 254;
+
+/// True when [channelId] is a keypad VFO memory slot rather than a regular
+/// channel, given the radio's regular [channelCount].
+bool isVfoChannelId(int channelId, int channelCount) =>
+    channelCount > 0 &&
+    channelId >= channelCount &&
+    channelId < kVfoChannelIdLimit;
 
 /// Radio lock state - for exclusive operations
 class RadioLockState {

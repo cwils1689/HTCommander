@@ -6100,6 +6100,36 @@ abstract class AppLocalizations {
   /// **'VFO A channel de-emphasis is on and will degrade data transfers.'**
   String get commsDeemphasisWarning;
 
+  /// No description provided for @commsAudioRelay.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio Relay'**
+  String get commsAudioRelay;
+
+  /// No description provided for @commsAudioRelayWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on the Audio relay to record the received voice, and send the buffered recording immediately after the reception stops, to realize the echo relay function. Generally used for high-point forwarding or non-directly connected to the two places for third-party forwarding. If it is opened in a general relay station, it will cause communication confusion.'**
+  String get commsAudioRelayWarning;
+
+  /// No description provided for @commsAudioRelayEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable'**
+  String get commsAudioRelayEnable;
+
+  /// No description provided for @commsAudioRelayEnabledBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio Relay is enabled. The radio re-transmits everything it receives.'**
+  String get commsAudioRelayEnabledBanner;
+
+  /// No description provided for @commsAudioRelayDisable.
+  ///
+  /// In en, this message translates to:
+  /// **'Disable'**
+  String get commsAudioRelayDisable;
+
   /// No description provided for @commsPttTransmitting.
   ///
   /// In en, this message translates to:
@@ -8071,7 +8101,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsWinlinkGatewayDbInfo.
   ///
   /// In en, this message translates to:
-  /// **'Download a small offline list of Winlink packet and VARA-FM gateways to find nearby stations, frequencies and supported modes on the map.'**
+  /// **'Download a small offline list of Winlink packet and XARA-FM gateways to find nearby stations, frequencies and supported modes on the map.'**
   String get settingsWinlinkGatewayDbInfo;
 
   /// Installed Winlink gateway directory version and gateway count

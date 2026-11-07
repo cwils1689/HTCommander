@@ -3449,6 +3449,23 @@ class AppLocalizationsHi extends AppLocalizations {
       'VFO A चैनल डी-एम्फेसिस चालू है और डेटा ट्रांसफर को खराब करेगा।';
 
   @override
+  String get commsAudioRelay => 'ऑडियो रिले';
+
+  @override
+  String get commsAudioRelayWarning =>
+      'प्राप्त आवाज़ को रिकॉर्ड करने और रिसेप्शन रुकते ही बफ़र की गई रिकॉर्डिंग भेजने के लिए ऑडियो रिले चालू करें, जिससे इको रिले फ़ंक्शन प्राप्त होता है। आमतौर पर ऊँचे स्थान से अग्रेषण या सीधे न जुड़े दो स्थानों के बीच तृतीय-पक्ष अग्रेषण के लिए उपयोग किया जाता है। यदि इसे सामान्य रिले स्टेशन पर चालू किया जाता है, तो इससे संचार में भ्रम पैदा होगा।';
+
+  @override
+  String get commsAudioRelayEnable => 'सक्षम करें';
+
+  @override
+  String get commsAudioRelayEnabledBanner =>
+      'ऑडियो रिले सक्षम है। रेडियो जो कुछ भी प्राप्त करता है उसे फिर से प्रसारित करता है।';
+
+  @override
+  String get commsAudioRelayDisable => 'अक्षम करें';
+
+  @override
   String get commsPttTransmitting => 'ट्रांसमिट हो रहा है';
 
   @override
@@ -4536,7 +4553,7 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String get settingsWinlinkGatewayDbInfo =>
-      'मानचित्र पर निकटवर्ती स्टेशन और उनकी आवृत्तियाँ खोजने के लिए Winlink पैकेट और VARA-FM गेटवे की एक छोटी ऑफ़लाइन सूची डाउनलोड करें।';
+      'मानचित्र पर निकटवर्ती स्टेशन और उनकी आवृत्तियाँ खोजने के लिए Winlink पैकेट और XARA-FM गेटवे की एक छोटी ऑफ़लाइन सूची डाउनलोड करें।';
 
   @override
   String settingsWinlinkGatewayDbInstalled(String version, int count) {
